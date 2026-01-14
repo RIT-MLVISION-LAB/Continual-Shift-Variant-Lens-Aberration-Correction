@@ -1,6 +1,5 @@
 datasets/
 psf_library/
-outputs/
 star_psfs_separated/
 toleranced_psfs_separated/
 Restormer/
