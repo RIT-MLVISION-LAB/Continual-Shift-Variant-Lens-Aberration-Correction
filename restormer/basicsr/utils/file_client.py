@@ -19,44 +19,6 @@ class BaseStorageBackend(metaclass=ABCMeta):
         pass
 
 
-class MemcachedBackend(BaseStorageBackend):
-    """Memcached storage backend.
-
-    Attributes:
-        server_list_cfg (str): Config file for memcached server list.
-        client_cfg (str): Config file for memcached client.
-        sys_path (str | None): Additional path to be appended to `sys.path`.
-            Default: None.
-    """
-
-    def __init__(self, server_list_cfg, client_cfg, sys_path=None):
-        if sys_path is not None:
-            import sys
-            sys.path.append(sys_path)
-        try:
-            import mc
-        except ImportError:
-            raise ImportError(
-                'Please install memcached to enable MemcachedBackend.')
-
-        self.server_list_cfg = server_list_cfg
-        self.client_cfg = client_cfg
-        self._client = mc.MemcachedClient.GetInstance(self.server_list_cfg,
-                                                      self.client_cfg)
-        # mc.pyvector servers as a point which points to a memory cache
-        self._mc_buffer = mc.pyvector()
-
-    def get(self, filepath):
-        filepath = str(filepath)
-        import mc
-        self._client.Get(filepath, self._mc_buffer)
-        value_buf = mc.ConvertBuffer(self._mc_buffer)
-        return value_buf
-
-    def get_text(self, filepath):
-        raise NotImplementedError
-
-
 class HardDiskBackend(BaseStorageBackend):
     """Raw hard disks storage backend."""
 
@@ -162,7 +124,6 @@ class FileClient(object):
 
     _backends = {
         'disk': HardDiskBackend,
-        'memcached': MemcachedBackend,
         'lmdb': LmdbBackend,
     }
 

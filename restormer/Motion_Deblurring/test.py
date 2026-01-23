@@ -11,7 +11,7 @@ from tqdm import tqdm
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-import utils
+from .utils import load_img, save_img
 
 from natsort import natsorted
 from glob import glob
@@ -64,7 +64,7 @@ with torch.no_grad():
         torch.cuda.ipc_collect()
         torch.cuda.empty_cache()
 
-        img = np.float32(utils.load_img(file_))/255.
+        img = np.float32(load_img(file_))/255.
         img = torch.from_numpy(img).permute(2,0,1)
         input_ = img.unsqueeze(0).cuda()
 
@@ -82,4 +82,4 @@ with torch.no_grad():
 
         restored = torch.clamp(restored,0,1).cpu().detach().permute(0, 2, 3, 1).squeeze(0).numpy()
 
-        utils.save_img((os.path.join(result_dir, os.path.splitext(os.path.split(file_)[-1])[0]+'.png')), img_as_ubyte(restored))
+        save_img((os.path.join(result_dir, os.path.splitext(os.path.split(file_)[-1])[0]+'.png')), img_as_ubyte(restored))
