@@ -201,7 +201,6 @@ def _ssim_cly(img1, img2):
     img2 = img2.astype(np.float64)
 
     kernel = cv2.getGaussianKernel(11, 1.5)
-    # print(kernel)
     window = np.outer(kernel, kernel.transpose())
 
     bt = cv2.BORDER_REPLICATE
@@ -284,20 +283,10 @@ def calculate_ssim(img1,
 
 
     ssims = []
-    # ssims_before = []
 
-    # skimage_before = skimage.metrics.structural_similarity(img1, img2, data_range=255., multichannel=True)
-    # print('.._skimage',
-    #       skimage.metrics.structural_similarity(img1, img2, data_range=255., multichannel=True))
     max_value = 1 if img1.max() <= 1 else 255
     with torch.no_grad():
         final_ssim = _ssim_3d(img1, img2, max_value)
         ssims.append(final_ssim)
-
-    # for i in range(img1.shape[2]):
-    #     ssims_before.append(_ssim(img1, img2))
-
-    # print('..ssim mean , new {:.4f}  and before {:.4f} .... skimage before {:.4f}'.format(np.array(ssims).mean(), np.array(ssims_before).mean(), skimage_before))
-        # ssims.append(skimage.metrics.structural_similarity(img1[..., i], img2[..., i], multichannel=False))
 
     return np.array(ssims).mean()

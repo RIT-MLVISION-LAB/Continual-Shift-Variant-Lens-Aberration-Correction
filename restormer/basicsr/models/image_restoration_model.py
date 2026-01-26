@@ -219,7 +219,6 @@ class ImageCleanModel(BaseModel):
                 metric: 0
                 for metric in self.opt['val']['metrics'].keys()
             }
-        # pbar = tqdm(total=len(dataloader), unit='image')
 
         window_size = self.opt['val'].get('window_size', 0)
 

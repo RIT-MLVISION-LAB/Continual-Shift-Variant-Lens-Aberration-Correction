@@ -66,7 +66,6 @@ class LinearLR(_LRScheduler):
     def get_lr(self):
         process = self.last_epoch / self.total_iter
         weight = (1 - process)
-        # print('get lr ', [weight * group['initial_lr'] for group in self.optimizer.param_groups])
         return [weight * group['initial_lr'] for group in self.optimizer.param_groups]
 
 class VibrateLR(_LRScheduler):
@@ -109,7 +108,6 @@ class VibrateLR(_LRScheduler):
         if self.last_epoch < Th:
             weight = max(0.1, weight)
 
-        # print('f {}, T {}, Th {}, t {}, f2 {}'.format(f, T, Th, t, f2))
         return [weight * group['initial_lr'] for group in self.optimizer.param_groups]
 
 def get_position_from_periods(iteration, cumulative_period):

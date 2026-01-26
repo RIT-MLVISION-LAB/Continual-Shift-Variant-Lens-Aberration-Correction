@@ -134,7 +134,7 @@ def main():
     torch.backends.cudnn.benchmark = True
     # torch.backends.cudnn.deterministic = True
 
-    # automatic resume ..
+    # automatic resume
     state_folder_path = 'experiments/{}/training_states/'.format(opt['name'])
     import os
     try:
@@ -206,8 +206,6 @@ def main():
         f'Start training from epoch: {start_epoch}, iter: {current_iter}')
     data_time, iter_time = time.time(), time.time()
     start_time = time.time()
-
-    # for epoch in range(start_epoch, total_epochs + 1):
 
     iters = opt['datasets']['train'].get('iters')
     batch_size = opt['datasets']['train'].get('batch_size_per_gpu')

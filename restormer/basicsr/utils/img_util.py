@@ -156,7 +156,7 @@ def padding(img_lq, img_gt, gt_size):
 
     img_lq = cv2.copyMakeBorder(img_lq, 0, h_pad, 0, w_pad, cv2.BORDER_REFLECT)
     img_gt = cv2.copyMakeBorder(img_gt, 0, h_pad, 0, w_pad, cv2.BORDER_REFLECT)
-    # print('img_lq', img_lq.shape, img_gt.shape)
+
     if img_lq.ndim == 2:
         img_lq = np.expand_dims(img_lq, axis=2)
     if img_gt.ndim == 2:
@@ -175,7 +175,7 @@ def padding_DP(img_lqL, img_lqR, img_gt, gt_size):
     img_lqL = cv2.copyMakeBorder(img_lqL, 0, h_pad, 0, w_pad, cv2.BORDER_REFLECT)
     img_lqR = cv2.copyMakeBorder(img_lqR, 0, h_pad, 0, w_pad, cv2.BORDER_REFLECT)
     img_gt  = cv2.copyMakeBorder(img_gt,  0, h_pad, 0, w_pad, cv2.BORDER_REFLECT)
-    # print('img_lq', img_lq.shape, img_gt.shape)
+
     return img_lqL, img_lqR, img_gt
 
 def imwrite(img, file_path, params=None, auto_mkdir=True):

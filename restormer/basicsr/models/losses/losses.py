@@ -18,11 +18,6 @@ def mse_loss(pred, target):
     return F.mse_loss(pred, target, reduction='none')
 
 
-# @weighted_loss
-# def charbonnier_loss(pred, target, eps=1e-12):
-#     return torch.sqrt((pred - target)**2 + eps)
-
-
 class L1Loss(nn.Module):
     """L1 (mean absolute error, MAE) loss.
 
@@ -117,6 +112,6 @@ class CharbonnierLoss(nn.Module):
 
     def forward(self, x, y):
         diff = x - y
-        # loss = torch.sum(torch.sqrt(diff * diff + self.eps))
         loss = torch.mean(torch.sqrt((diff * diff) + (self.eps*self.eps)))
         return loss
+
