@@ -1,5 +1,6 @@
+## Shift-Variant Blur Deblurring for Star Phase Mask Variant 1
 # general settings
-name: Deblurring_Restormer
+name: Shift_Variant_V1_Deblurring_Restormer
 model_type: ImageCleanModel
 scale: 1
 num_gpu: 8  # set to 0 for cpu mode, adjust based on available GPUs
@@ -8,10 +9,10 @@ manual_seed: 100
 # dataset and data loader settings
 datasets:
   train:
-    name: TrainSet
+    name: TrainSet_ShiftVariant_V1
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/train/GoPro/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/train/GoPro/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/train/ShiftVariant_V1/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/train/ShiftVariant_V1/input_crops
     geometric_augs: true
 
     filename_tmpl: '{}'
@@ -41,10 +42,10 @@ datasets:
     prefetch_mode: ~
 
   val:
-    name: ValSet
+    name: ValSet_ShiftVariant_V1
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/val/GoPro/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/val/GoPro/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/val/ShiftVariant_V1/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/val/ShiftVariant_V1/input_crops
     io_backend:
       type: disk
 
