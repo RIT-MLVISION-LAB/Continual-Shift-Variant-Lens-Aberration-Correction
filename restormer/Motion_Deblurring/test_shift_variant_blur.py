@@ -1,6 +1,6 @@
 ### Example code for testing Shift-Variant Blur Deblurring using Restormer
 ### PYTHONPATH=.. python test_shift_variant_blur.py \
-###    --weights ../experiments/Shift_Variant_V1_Deblurring_Restormer/models/net_g_148000.pth \
+###    --weights ../experiments/archived_checkpoints/V1_only/net_g_latest.pth
 ###    --variant 1 --split val --save_images
 import numpy as np
 import os
@@ -46,10 +46,10 @@ def main():
     args = parser.parse_args()
 
     # loading model configuration
-    yaml_file = f'Options/Deblurring_ShiftVariant_V{args.variant}.yml'
+    yaml_file = f'Options/Shift_Variant_V{args.variant}_Deblurring_Restormer.yml'
     if not os.path.exists(yaml_file):
         yaml_file = 'Options/Deblurring_Restormer.yml'
-        print(f"Warning: Variant config not found, using default: {yaml_file}")
+        print(f"WARNING: Variant config not found, using default: {yaml_file}")
 
     import yaml
     try:

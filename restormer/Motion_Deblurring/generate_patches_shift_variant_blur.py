@@ -233,6 +233,64 @@ def prepare_dataset(args):
     print(f"Processed {val_count} validation images")
 
 
+def prepare_validation_dataset_only(args):
+    # source directories
+    src_val_blur = os.path.join(args.src_root, f'variant_{args.variant}', 'val', 'blur')
+    src_val_sharp = os.path.join(args.src_root, f'variant_{args.variant}', 'val', 'sharp')
+
+    # target directories
+    dataset_name = f'ShiftVariant_V{args.variant}_Full_Images'
+    tar_val = os.path.join(args.tar_root, 'val', dataset_name)
+
+    val_input_dir = os.path.join(tar_val, 'input_crops')
+    val_target_dir = os.path.join(tar_val, 'target_crops')
+
+    os.makedirs(val_input_dir, exist_ok=True)
+    os.makedirs(val_target_dir, exist_ok=True)
+
+    print(f"Preparing Validation Set Only - Variant {args.variant}")
+    print(f"\nSource paths:")
+    print(f"Val blur directory: {src_val_blur}")
+    print(f"Val sharp directory: {src_val_sharp}")
+    print(f"\nTarget paths:")
+    print(f"Val input directory: {val_input_dir}")
+    print(f"Val target directory: {val_target_dir}")
+
+     # verifying that source directories exist
+    for path in [src_val_blur, src_val_sharp]:
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Source directory not found: {path}")
+
+    # generating validation file lists
+    print("\nProcessing validation images...")
+    lr_files = natsorted(glob(os.path.join(src_val_blur, '*.png')))
+    hr_files = natsorted(glob(os.path.join(src_val_sharp, '*.png')))
+
+    print(f"Found {len(lr_files)} blur images")
+    print(f"Found {len(hr_files)} sharp images")
+
+    val_files = list(zip(lr_files, hr_files))
+
+    if args.num_workers > 1:
+        results = Parallel(n_jobs=args.num_workers)(
+            delayed(process_val_image)(
+                file_pair, args.val_patch_size, 
+                val_input_dir, val_target_dir, not args.no_center_crop
+            ) for file_pair in tqdm(val_files, desc="Validation")
+        )
+        val_count = sum(results)
+    else:
+        val_count = 0
+        for file_pair in tqdm(val_files, desc="Validation"):
+            if process_val_image(
+                file_pair, args.val_patch_size,
+                val_input_dir, val_target_dir, not args.no_center_crop
+            ):
+                val_count += 1
+
+    print(f"Processed {val_count} validation images")
+
+
 if __name__ == '__main__':
     """
     Example Usages:
@@ -247,6 +305,10 @@ if __name__ == '__main__':
         # Prepare with different patch sizes
         python generate_patches_shift_variant.py --variant 1 \\
             --patch-size 256 --overlap 128 --val-patch-size 256
+
+        # Prepare only validation set (keep full images)
+        python generate_patches_shift_variant.py --variant 1 --prepare_val_only \\
+            --no-center-crop
     """
 
     parser = argparse.ArgumentParser(
@@ -272,7 +334,12 @@ if __name__ == '__main__':
                         help='Number of parallel workers (default: 8)')
     parser.add_argument('--no-center-crop', action='store_true',
                         help='Disable center cropping for validation (keep full images)')
+    parser.add_argument('--prepare_val_only', action='store_true',
+                        help='Only prepare validation set (skip training patches)')
 
     args = parser.parse_args()
 
-    prepare_dataset(args)
+    if args.prepare_val_only:
+        prepare_validation_dataset_only(args)
+    else:
+        prepare_dataset(args)
