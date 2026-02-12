@@ -2,7 +2,9 @@ datasets/
 psf_library/
 star_psfs_separated/
 toleranced_psfs_separated/
-Restormer/
+restormer/Motion_Deblurring/Datasets/
+restormer/tb_logger/
+
 *.npy
 *.h5
 *.hdf5
@@ -20,6 +22,7 @@ pretrained/
 *.ckpt
 *.safetensors
 *.onnx
+*.state
 
 logs/
 runs/
@@ -36,8 +39,10 @@ __pycache__/
 
 .env
 .venv
+.gggt_venv
 env/
 venv/
+gggt_venv/
 .conda/
 
 .ipynb_checkpoints/

@@ -10,9 +10,7 @@ from glob import glob
 from natsort import natsorted
 import os
 from tqdm import tqdm
-from pdb import set_trace as stx
 from joblib import Parallel, delayed
-import multiprocessing
 
 def train_files(file_):
     lr_file, hr_file = file_
