@@ -1,10 +1,12 @@
 import importlib
 import torch
+import torch.nn.functional as F
 from collections import OrderedDict
 from copy import deepcopy
+import os
 from os import path as osp
-from tqdm import tqdm
-
+import random
+from functools import partial
 from basicsr.models.archs import define_network
 from basicsr.models.base_model import BaseModel
 from basicsr.utils import get_root_logger, imwrite, tensor2img
@@ -12,12 +14,6 @@ from basicsr.utils import get_root_logger, imwrite, tensor2img
 loss_module = importlib.import_module('basicsr.models.losses')
 metric_module = importlib.import_module('basicsr.metrics')
 
-import os
-import random
-import numpy as np
-import cv2
-import torch.nn.functional as F
-from functools import partial
 
 class Mixing_Augment:
     def __init__(self, mixup_beta, use_identity, device):

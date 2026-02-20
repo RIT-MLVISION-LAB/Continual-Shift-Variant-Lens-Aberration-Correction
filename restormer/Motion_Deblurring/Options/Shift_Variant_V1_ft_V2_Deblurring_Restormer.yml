@@ -1,4 +1,4 @@
-## Shift-Variant Blur Deblurring for Star Phase Mask Variant 2
+## Shift-Variant Blur Deblurring for Star Phase Mask Variant 2 with Variant 1 Pretrained Weights
 # general settings
 name: Shift_Variant_V1_ft_V2_Deblurring_Restormer
 model_type: ImageCleanModel
@@ -61,7 +61,6 @@ network_g:
   ffn_expansion_factor: 2.66
   bias: False
   LayerNorm_type: WithBias
-  dual_pixel_task: False
 
 # path
 path:

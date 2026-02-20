@@ -61,7 +61,6 @@ network_g:
   ffn_expansion_factor: 2.66
   bias: False
   LayerNorm_type: WithBias
-  dual_pixel_task: False
 
 # path
 path:
