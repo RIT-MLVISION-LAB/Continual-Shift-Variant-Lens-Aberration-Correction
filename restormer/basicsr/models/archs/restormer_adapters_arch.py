@@ -3,7 +3,6 @@ import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.checkpoint import checkpoint
 from einops import rearrange
 import numbers
 
@@ -601,45 +600,45 @@ class RestormerAdapters(nn.Module):
         inp_enc_level1 = self.patch_embed(inp_img)
         out_enc_level1 = inp_enc_level1
         for blk in self.encoder_level1:
-            out_enc_level1 = checkpoint(blk, out_enc_level1, get_adapter(), adapter_option, use_reentrant=False)
+            out_enc_level1 = blk(out_enc_level1, get_adapter(), adapter_option)
 
         inp_enc_level2 = self.down1_2(out_enc_level1)
         out_enc_level2 = inp_enc_level2
         for blk in self.encoder_level2:
-            out_enc_level2 = checkpoint(blk, out_enc_level2, get_adapter(), adapter_option, use_reentrant=False)
+            out_enc_level2 = blk(out_enc_level2, get_adapter(), adapter_option)
 
         inp_enc_level3 = self.down2_3(out_enc_level2)
         out_enc_level3 = inp_enc_level3
         for blk in self.encoder_level3:
-            out_enc_level3 = checkpoint(blk, out_enc_level3, get_adapter(), adapter_option, use_reentrant=False)
+            out_enc_level3 = blk(out_enc_level3, get_adapter(), adapter_option)
 
         inp_enc_level4 = self.down3_4(out_enc_level3)
         latent = inp_enc_level4
         for blk in self.latent:
-            latent = checkpoint(blk, latent, get_adapter(), adapter_option, use_reentrant=False)
+            latent = blk(latent, get_adapter(), adapter_option)
 
         inp_dec_level3 = self.up4_3(latent)
         inp_dec_level3 = torch.cat([inp_dec_level3, out_enc_level3], 1)
         inp_dec_level3 = self.reduce_chan_level3(inp_dec_level3)
         out_dec_level3 = inp_dec_level3
         for blk in self.decoder_level3:
-            out_dec_level3 = checkpoint(blk, out_dec_level3, get_adapter(), adapter_option, use_reentrant=False)
+            out_dec_level3 = blk(out_dec_level3, get_adapter(), adapter_option)
 
         inp_dec_level2 = self.up3_2(out_dec_level3)
         inp_dec_level2 = torch.cat([inp_dec_level2, out_enc_level2], 1)
         inp_dec_level2 = self.reduce_chan_level2(inp_dec_level2)
         out_dec_level2 = inp_dec_level2
         for blk in self.decoder_level2:
-            out_dec_level2 = checkpoint(blk, out_dec_level2, get_adapter(), adapter_option, use_reentrant=False)
+            out_dec_level2 = blk(out_dec_level2, get_adapter(), adapter_option)
 
         inp_dec_level1 = self.up2_1(out_dec_level2)
         inp_dec_level1 = torch.cat([inp_dec_level1, out_enc_level1], 1)
         out_dec_level1 = inp_dec_level1
         for blk in self.decoder_level1:
-            out_dec_level1 = checkpoint(blk, out_dec_level1, get_adapter(), adapter_option, use_reentrant=False)
+            out_dec_level1 = blk(out_dec_level1, get_adapter(), adapter_option)
 
         for blk in self.refinement:
-            out_dec_level1 = checkpoint(blk, out_dec_level1, get_adapter(), adapter_option, use_reentrant=False)
+            out_dec_level1 = blk(out_dec_level1, get_adapter(), adapter_option)
 
         out = self.output(out_dec_level1) + inp_img
 
