@@ -20,8 +20,14 @@ class RestormerAdapterModel(ImageCleanModel):
         train_opt = self.opt["train"]
         logger = get_root_logger()
 
-        if self.adapter_training:  # freezing backbone before setting up optimizer
-            self.get_bare_model(self.net_g).freeze_backbone()  # using get_bare_model to access underlying model
+        if self.adapter_training:
+            bare_model = self.get_bare_model(self.net_g)  # accessing underlying model
+            if self.opt.get('commit_loaded_adapter', False):  # commits loaded adapter to adapter_list
+                bare_model.commit_and_reinit()  # reinitializes cur_adapter fresh for new domain
+                logger.info(f"Committed {len(bare_model.adapter_list)} loaded adapter(s) to adapter_list")
+                logger.info(f"Fresh cur_adapter initialized for new domain {self.opt.get('current_domain', -1)}")
+
+            bare_model.freeze_backbone()  # freezing backbone + all adapter_list entries
 
             total = sum(p.numel() for p in self.net_g.parameters())
             trainable = sum(p.numel() for p in self.net_g.parameters() if p.requires_grad)
@@ -69,9 +75,8 @@ class RestormerAdapterModel(ImageCleanModel):
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
 
-        # forward pass with adapters
-        # adapter_id=0: uses cur_adapter for training
-        self.output = self.net_g(self.lq, adapter_id=0, train=True)
+        adapter_id = self.opt.get('current_domain', -1)
+        self.output = self.net_g(self.lq, adapter_id=adapter_id)
 
         l_total = 0
         loss_dict = OrderedDict()
@@ -99,10 +104,10 @@ class RestormerAdapterModel(ImageCleanModel):
     def nonpad_test(self, img=None):
         if img is None:
             img = self.lq
-        adapter_id = self.opt.get("test_adapter_id", 0)
+        adapter_id = self.opt.get("current_domain", -1)
         self.net_g.eval()
         with torch.no_grad():
-            pred = self.net_g(img, adapter_id=adapter_id, train=False)
+            pred = self.net_g(img, adapter_id=adapter_id)
         if isinstance(pred, list):
             pred = pred[-1]
         self.output = pred
@@ -149,10 +154,10 @@ class RestormerAdapterModel(ImageCleanModel):
         if unexpected:
             logger.warning(f"Unexpected keys in checkpoint: {list(unexpected)[:5]}...")
 
+        net.prepare_adapter_list_for_loading(load_net)  # prepares adapter_list to receive loaded adapter if present
         net.load_state_dict(load_net, strict=False)  # strict=False allows missing adapter keys
 
         logger.info(f"Successfully loaded backbone weights")
-        logger.info(f"Adapters will be trained from scratch (LoRA initialization)")
 
     def save(self, epoch, current_iter):
         self.save_network(self.net_g, "net_g", current_iter)  # saves backbone + adapters

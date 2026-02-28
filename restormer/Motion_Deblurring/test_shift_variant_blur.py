@@ -70,7 +70,10 @@ def build_model(args):
         model = RestormerAdapters(**network_config, adapter_config=adapter_config)
         checkpoint = torch.load(args.weights, map_location='cpu')  # backbone + adapters
         state_dict = checkpoint.get('params', checkpoint)
-        model.load_state_dict(state_dict, strict=False)  # strict=False allows loading backbone weights even if adapter keys are missing
+
+        # pre-allocating adapter_list before loading state_dict to avoid key mismatches
+        model.prepare_adapter_list_for_loading(state_dict)
+        model.load_state_dict(state_dict, strict=False)
     else:
         model = Restormer(**network_config)
         checkpoint = torch.load(args.weights, map_location='cpu')
@@ -166,7 +169,7 @@ def main():
             input_ = F.pad(input_, (0, padw, 0, padh), 'reflect')
 
             if use_adapters:
-                restored = model(input_, adapter_id=args.adapter_id, train=False)
+                restored = model(input_, adapter_id=args.adapter_id)
             else:
                 restored = model(input_)
 

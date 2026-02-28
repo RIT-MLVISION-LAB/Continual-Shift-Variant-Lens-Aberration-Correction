@@ -495,97 +495,82 @@ class RestormerAdapters(nn.Module):
 
         return dims
 
-    def init_adapters(self):
+    def _make_adapter_set(self):
         config = self.adapter_config
-        self.cur_adapter = nn.ModuleList()
+        adapter_set = nn.ModuleList()
 
         for dim in self.block_dims:
-            adapter = Adapter(
-                d_model=dim,
-                bottleneck=config.bottleneck,
-                dropout=config.dropout,
-                adapter_scalar=config.adapter_scalar,
-                adapter_layernorm_option=config.adapter_layernorm_option,
+            adapter_set.append(
+                Adapter(
+                    d_model=dim,
+                    bottleneck=config.bottleneck,
+                    dropout=config.dropout,
+                    adapter_scalar=config.adapter_scalar,
+                    adapter_layernorm_option=config.adapter_layernorm_option,
+                )
             )
-            self.cur_adapter.append(adapter)
 
+        try:  # matching device of existing model parameters
+            device = next(self.parameters()).device
+            adapter_set = adapter_set.to(device)
+        except StopIteration:
+            pass  # during __init__, no parameters yet
+        return adapter_set
+
+    def init_adapters(self):
+        self.cur_adapter = self._make_adapter_set()
         self.cur_adapter.requires_grad_(True)
+
+    def commit_and_reinit(self):
+        """
+        Moves cur_adapter into adapter_list (frozen storage)
+        and re-initializes a fresh LoRA-zero cur_adapter for the next domain.
+        """
+        self.adapter_list.append(copy.deepcopy(self.cur_adapter))
+        self.init_adapters()  # reinitializes cur_adapter with LoRA zero-init
+
+    def prepare_adapter_list_for_loading(self, state_dict):
+        adapter_list_indices = set()
+        for key in state_dict.keys():
+            if key.startswith("adapter_list."):
+                idx = int(key.split(".")[1])
+                adapter_list_indices.add(idx)
+
+        num_committed = len(adapter_list_indices)
+        if num_committed > 0:
+            print(f"Checkpoint contains {num_committed} committed adapter(s), pre-allocating adapter_list")
+            for _ in range(num_committed):
+                self.adapter_list.append(self._make_adapter_set())
 
     def freeze_backbone(self):
         for name, param in self.named_parameters():
-            if "cur_adapter" in name or "adapter_list" in name:
-                param.requires_grad = True
+            if "cur_adapter" in name:
+                param.requires_grad = True  # only current domain adapter trains
             else:
-                param.requires_grad = False
+                param.requires_grad = False  # backbone + all adapter_list entries frozen
 
         print(f"Backbone frozen.")
         print(f"Trainable adapter parameters in current adapter set:")
         print(f"{sum(p.numel() for p in self.cur_adapter.parameters()):,}")
 
-    def adapter_update(self):  # TODO: Not utilized in current domain incremental setting
-        self.adapter_merge()
-        self.adapter_list.append(copy.deepcopy(self.cur_adapter))
-        self.sum_adapter_param()
-
-    def sum_adapter_param(self):
-        for block_idx in range(self.total_blocks):
-            cur_adapter = self.cur_adapter[block_idx]
-
-            down_weight = cur_adapter.down_proj.weight.data
-            down_bias = cur_adapter.down_proj.bias.data
-            up_weight = cur_adapter.up_proj.weight.data
-            up_bias = cur_adapter.up_proj.bias.data
-
-            if len(self.down_weight_sum[block_idx]) > 0:
-                self.down_weight_sum[block_idx].append(down_weight + self.down_weight_sum[block_idx][-1])
-                self.down_bias_sum[block_idx].append(down_bias + self.down_bias_sum[block_idx][-1])
-                self.up_weight_sum[block_idx].append(up_weight + self.up_weight_sum[block_idx][-1])
-                self.up_bias_sum[block_idx].append(up_bias + self.up_bias_sum[block_idx][-1])
-            else:
-                self.down_weight_sum[block_idx].append(down_weight.clone())
-                self.down_bias_sum[block_idx].append(down_bias.clone())
-                self.up_weight_sum[block_idx].append(up_weight.clone())
-                self.up_bias_sum[block_idx].append(up_bias.clone())
-
-    def reweight_adapter(self, adapter, idx):
-        momentum = self.adapter_config.adapter_momentum
-        if momentum == 0 or idx == 0:
-            return adapter
-
-        for block_idx in range(self.total_blocks):
-            cur = adapter[block_idx]
-
-            cur.down_proj.weight.data = (1 - momentum) * cur.down_proj.weight.data \
-                + momentum * self.down_weight_sum[block_idx][idx - 1] / idx
-            cur.down_proj.bias.data = (1 - momentum) * cur.down_proj.bias.data \
-                + momentum * self.down_bias_sum[block_idx][idx - 1] / idx
-            cur.up_proj.weight.data = (1 - momentum) * cur.up_proj.weight.data \
-                + momentum * self.up_weight_sum[block_idx][idx - 1] / idx
-            cur.up_proj.bias.data = (1 - momentum) * cur.up_proj.bias.data \
-                + momentum * self.up_bias_sum[block_idx][idx - 1] / idx
-
-        return adapter
-
-    def adapter_merge(self):
-        if len(self.adapter_list) == 0 or self.adapter_config.adapter_momentum == 0:
-            return
-        self.cur_adapter = self.reweight_adapter(self.cur_adapter, len(self.adapter_list))
-
-    def forward(self, inp_img, adapter_id=-1, train=False):
+    def forward(self, inp_img, adapter_id=-1):
+        """
+        adapter_id=-1: backbone only, no adapter
+        adapter_id=len(adapter_list): cur_adapter (current training domain)
+        adapter_id=k < len(adapter_list): frozen committed adapter for domain k
+        """
         adapter_option = self.adapter_config.adapter_option
 
         if adapter_id == -1:  # no adapters, pure backbone
             adapters = None
+        elif adapter_id == len(self.adapter_list):  # N: current adapter
+            adapters = self.cur_adapter
+        elif 0 <= adapter_id < len(self.adapter_list):  # 0~N-1: previous adapters
+            adapters = self.adapter_list[adapter_id]
         else:
-            if train:  # during training mode, uses cur_adapter with momentum
-                adapters = self.reweight_adapter(self.cur_adapter, adapter_id)
-            else:  # inference mode, uses specified adapter set without momentum
-                if adapter_id == len(self.adapter_list):  # N: current adapter
-                    adapters = self.reweight_adapter(self.cur_adapter, adapter_id)
-                elif adapter_id < len(self.adapter_list):  # 0~N-1: previous adapters
-                    adapters = self.reweight_adapter(self.adapter_list[adapter_id], adapter_id)
-                else:
-                    raise ValueError(f"Invalid adapter_id: {adapter_id}")
+            raise ValueError(f"Invalid adapter_id={adapter_id}."
+            f"adapter_list has {len(self.adapter_list)} committed adapter(s), "
+            f"cur_adapter is at index {len(self.adapter_list)}.")
 
         adapter_idx = 0
 
