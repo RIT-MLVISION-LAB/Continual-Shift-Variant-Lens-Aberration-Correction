@@ -8,12 +8,12 @@ from basicsr.utils import get_root_logger
 loss_module = importlib.import_module('basicsr.models.losses')
 
 
-class RestormerAdapterModel(ImageCleanModel):
+class AdapterModel(ImageCleanModel):
     def __init__(self, opt):
         self.adapter_training = opt.get("adapter_training", True)
         super().__init__(opt)
         logger = get_root_logger()
-        logger.info(f"RestormerAdapterModel initialized")
+        logger.info(f"AdapterModel initialized")
 
     def init_training_settings(self):
         self.net_g.train()
@@ -68,7 +68,7 @@ class RestormerAdapterModel(ImageCleanModel):
         elif optim_type == "AdamW":
             self.optimizer_g = torch.optim.AdamW(optim_params, **train_opt['optim_g'])
         else:
-            raise NotImplementedError(f'Optimizer {optim_type} is not supperted')
+            raise NotImplementedError(f'Optimizer {optim_type} is not supported')
 
         self.optimizers.append(self.optimizer_g)
 
@@ -117,7 +117,7 @@ class RestormerAdapterModel(ImageCleanModel):
         """
         Loads network weights with adapter-aware handling.
 
-        When loading previous checkpoint into RestormerAdapters:
+        When loading previous checkpoint into AdapterModel:
         - backbone weights: loaded from checkpoint
         - adapter weights: randomly initialized by the model, we use strict=False to allow this.
         """

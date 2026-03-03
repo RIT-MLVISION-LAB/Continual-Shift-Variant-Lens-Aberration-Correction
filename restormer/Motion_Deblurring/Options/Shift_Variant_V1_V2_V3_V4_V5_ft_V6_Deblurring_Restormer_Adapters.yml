@@ -1,6 +1,6 @@
-## Shift-Variant Blur Deblurring for Star Phase Mask Variant 3 with Variant 1 Pretraining and Variant 2 Adapters
+## Shift-Variant Blur Deblurring for Star Phase Mask Variant 6 with Variant 1 Pretraining and Variant 2, 3, 4, 5 Adapters
 # general settings
-name: Shift_Variant_V1_V2_ft_V3_Deblurring_Restormer_Adapters
+name: Shift_Variant_V1_V2_V3_V4_V5_ft_V6_Deblurring_Restormer_Adapters
 model_type: AdapterModel
 scale: 1
 num_gpu: 4 # set to 0 for cpu mode, adjust based on available GPUs
@@ -9,15 +9,15 @@ manual_seed: 100
 # adapter settings
 adapter_training: true
 commit_loaded_adapter: true  # false for V2, true for V3 onward
-current_domain: 1  # V1=-1 (pure backbone), V2=0, V3=1, V4=2, V5=3, V6=4
+current_domain: 4  # V1=-1 (pure backbone), V2=0, V3=1, V4=2, V5=3, V6=4
 
 # dataset and data loader settings
 datasets:
   train:
-    name: TrainSet_ShiftVariant_V1_V2_ft_V3_Adapters
+    name: TrainSet_ShiftVariant_V1_V2_V3_V4_V5_ft_V6_Restormer_Adapters
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/train/ShiftVariant_V3/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/train/ShiftVariant_V3/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/train/ShiftVariant_V6/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/train/ShiftVariant_V6/input_crops
     geometric_augs: true
 
     filename_tmpl: "{}"
@@ -38,10 +38,10 @@ datasets:
     prefetch_mode: ~
 
   val:
-    name: ValSet_ShiftVariant_V1_V2_ft_V3_Adapters
+    name: ValSet_ShiftVariant_V1_V2_V3_V4_V5_ft_V6_Restormer_Adapters
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/val/ShiftVariant_V3/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/val/ShiftVariant_V3/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/val/ShiftVariant_V6/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/val/ShiftVariant_V6/input_crops
     io_backend:
       type: disk
 
@@ -68,7 +68,7 @@ network_g:
 
 # path
 path:
-  pretrain_network_g: ./experiments/archived_checkpoints/V1_ft_V2_Adapters/net_g_50000.pth
+  pretrain_network_g: ./experiments/archived_checkpoints/V1_V2_V3_V4_ft_V5_Adapters/net_g_latest.pth
   strict_load_g: false # allows loading checkpoints with missing keys (extra adapter params randomly initialized)
   resume_state: ~
 

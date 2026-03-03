@@ -171,57 +171,6 @@ def plot_forgetting(psnr_matrix, output_path, figsize=None, y_limits=None):
     return output_path, str(png_path)
 
 
-def print_matrix_summary(psnr_matrix):
-    n = len(psnr_matrix)
-
-    print("\n" + "=" * 60)
-    print("PSNR Matrix (R[i,j] = PSNR on Vj after training through Vi)")
-    print("=" * 60)
-
-    header = f"{'Stage':<12}" + "".join([f"{'V' + str(j+1):>8}" for j in range(n)])
-    print(header)
-    print("-" * len(header))
-
-    for i in range(n):
-        row_label = "→".join([f"V{k+1}" for k in range(i + 1)])
-        row_str = f"{row_label:<12}"
-        for j in range(n):
-            if j <= i:
-                row_str += f"{psnr_matrix[i][j]:>8.2f}"
-            else:
-                row_str += f'{"—":>8}'
-        print(row_str)
-
-    print("\n" + "=" * 60)
-    print("Continual Learning Metrics")
-    print("=" * 60)
-
-    avg_incremental = []
-    for i in range(n):
-        avg_incremental.append(np.mean(psnr_matrix[i]))
-    print(f"\nAverage Incremental PSNR: {np.mean(avg_incremental):.2f} dB")
-
-    # Backward Transfer (BWT) = (1 / (T-1)) * sum_{i=1}^{T-1} (R[T,i] - R[i,i])
-    if n >= 2:
-        bwt_terms = []
-        for j in range(n - 1):
-            bwt_terms.append(psnr_matrix[-1][j] - psnr_matrix[j][j])
-        bwt = np.mean(bwt_terms)
-        print(f"Backward Transfer (BWT): {bwt:+.2f} dB")
-        print(f"(negative = forgetting, positive = improvement)")
-
-    # Forward Transfer (FWT) = (1 / (T-1)) * sum_{i=2}^{T} (R[i-1,i] - baseline[i])
-    # Since we don't have a baseline (random init), we report R[i,i] - first exposure
-    print(f"\nPer-variant forgetting (initial → final):")
-    for j in range(n):
-        initial = psnr_matrix[j][j]
-        final = psnr_matrix[-1][j]
-        drop = initial - final
-        print(f"V{j+1}: {initial:.2f} → {final:.2f}  (Δ = {drop:+.2f} dB)")
-
-    print("=" * 60)
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Generate continual learning forgetting plot",
@@ -235,7 +184,6 @@ def main():
 
     args = parser.parse_args()
     psnr_matrix = load_psnr_matrix(args.input)
-    print_matrix_summary(psnr_matrix)
     plot_forgetting(psnr_matrix, output_path=args.output)
 
 

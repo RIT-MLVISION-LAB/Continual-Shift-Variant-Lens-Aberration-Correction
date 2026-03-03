@@ -1,7 +1,7 @@
 ## Shift-Variant Blur Deblurring for Star Phase Mask Variant 2 with Variant 1 Pretraining and Adapters
 # general settings
 name: Shift_Variant_V1_ft_V2_Deblurring_Restormer_Adapters
-model_type: RestormerAdapterModel
+model_type: AdapterModel
 scale: 1
 num_gpu: 4 # set to 0 for cpu mode, adjust based on available GPUs
 manual_seed: 100

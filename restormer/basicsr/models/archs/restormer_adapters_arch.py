@@ -59,12 +59,29 @@ class Adapter(nn.Module):
             up = self.adapter_layer_norm_before(up)
 
         up = up.reshape(B, H, W, C).permute(0, 3, 1, 2)  # [B, C, H, W]
-
         up = up * self.scale
 
         if add_residual:
             return up + residual
         return up
+
+
+class AdapterConfig:
+    def __init__(
+        self,
+        bottleneck=64,  # adapter bottleneck dimension
+        dropout=0.1,
+        adapter_scalar="1.0",  # or 'learnable_scalar'
+        adapter_layernorm_option="in",  # 'in', 'out', or None
+        adapter_option="parallel",  # 'parallel' or 'sequential'
+        adapter_momentum=0.0,  # momentum for weight averaging
+    ):
+        self.bottleneck = bottleneck
+        self.dropout = dropout
+        self.adapter_scalar = adapter_scalar
+        self.adapter_layernorm_option = adapter_layernorm_option
+        self.adapter_option = adapter_option
+        self.adapter_momentum = adapter_momentum
 
 
 class OverlapPatchEmbed(nn.Module):
@@ -276,24 +293,6 @@ class Upsample(nn.Module):
         return self.body(x)
 
 
-class AdapterConfig:
-    def __init__(
-        self,
-        bottleneck=64,  # adapter bottleneck dimension
-        dropout=0.1,
-        adapter_scalar="1.0",  # or 'learnable_scalar'
-        adapter_layernorm_option="in",  # 'in', 'out', or None
-        adapter_option="parallel",  # 'parallel' or 'sequential'
-        adapter_momentum=0.0,  # momentum for weight averaging
-    ):
-        self.bottleneck = bottleneck
-        self.dropout = dropout
-        self.adapter_scalar = adapter_scalar
-        self.adapter_layernorm_option = adapter_layernorm_option
-        self.adapter_option = adapter_option
-        self.adapter_momentum = adapter_momentum
-
-
 class RestormerAdapters(nn.Module):
     def __init__(
         self,
@@ -457,14 +456,8 @@ class RestormerAdapters(nn.Module):
         self.total_blocks = self._count_blocks()  # total number of transformer blocks
         self.block_dims = self._get_block_dims()
 
-        self.cur_adapter = nn.ModuleList()  # current adapter set for current domain
-        self.adapter_list = nn.ModuleList()  # # list of all previous domain adapter sets
-
-        # prefix sums for momentum averaging
-        self.down_weight_sum = [[] for _ in range(self.total_blocks)]
-        self.down_bias_sum = [[] for _ in range(self.total_blocks)]
-        self.up_weight_sum = [[] for _ in range(self.total_blocks)]
-        self.up_bias_sum = [[] for _ in range(self.total_blocks)]
+        self.cur_adapter = nn.ModuleList()  # current domain adapter set
+        self.adapter_list = nn.ModuleList()  # list of all previously committed domain adapter sets
 
         self.init_adapters()  # initialize adapter set for first domain
 
@@ -515,6 +508,7 @@ class RestormerAdapters(nn.Module):
             adapter_set = adapter_set.to(device)
         except StopIteration:
             pass  # during __init__, no parameters yet
+
         return adapter_set
 
     def init_adapters(self):
@@ -569,8 +563,8 @@ class RestormerAdapters(nn.Module):
             adapters = self.adapter_list[adapter_id]
         else:
             raise ValueError(f"Invalid adapter_id={adapter_id}."
-            f"adapter_list has {len(self.adapter_list)} committed adapter(s), "
-            f"cur_adapter is at index {len(self.adapter_list)}.")
+                             f"adapter_list has {len(self.adapter_list)} committed adapter(s), "
+                             f"cur_adapter is at index {len(self.adapter_list)}.")
 
         adapter_idx = 0
 
