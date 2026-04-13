@@ -6,7 +6,7 @@ Input format (JSON):
     after sequential training through variant i+1.
 
 Usage:
-    python plot_forgetting.py --input restormer_psnr_matrix.json --output forgetting_plot.pdf
+    python generate_forgetting_plots.py --input restormer_psnr_matrix.json --output forgetting_plot.pdf
 """
 
 import argparse
