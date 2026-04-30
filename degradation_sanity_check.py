@@ -1,6 +1,6 @@
 """
 Usage:
-    python sanity_check.py --input_img ./path/to/image.png
+    python degradation_sanity_check.py --input_img ./path/to/image.png
 """
 
 import os
@@ -26,14 +26,9 @@ def compute_psnr(gt, degraded):
     return 10 * np.log10(1.0 / mse)
 
 
-def save_rgb_image(img_rgb, path):
-    img_bgr = cv2.cvtColor((np.clip(img_rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
-    cv2.imwrite(path, img_bgr)
-
-
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_img", type=str, default="./datasets/DIV2K/DIV2K_train_HR/0002.png", help="Path to a real image.")
+    parser.add_argument("--input_img", type=str, default="./datasets/DIV2K/DIV2K_train_HR/0002.png")
     parser.add_argument("--output_dir", type=str, default="./outputs/degradations_sanity_check_output")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -43,15 +38,16 @@ def main():
 
     gt = load_real_image(args.input_img)
     h, w = gt.shape[:2]
-    save_rgb_image(gt, os.path.join(args.output_dir, "00_ground_truth.png"))
+    img_bgr = cv2.cvtColor((np.clip(gt, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+    cv2.imwrite(os.path.join(args.output_dir, "GT.png"), img_bgr)
 
     # defining degradations
     degradations = [
         ("Denoise", "Gaussian Noise (σ=25)", add_gaussian_noise, {"sigma": 25.0}),
-        ("Dehaze", "Haze (β=0.7, A=0.85)", add_haze, {"beta": 0.7, "A": 0.85}),
-        ("Derain", "Rain Streaks (L=3, n=700, α=0.5)", add_rain, 
-         {"num_layers": 3, "streak_density": 700, "alpha": 0.5}),
-        ("Lowlight", "Low-Light (γ=2.0, ns=0.03)", add_low_light, {"gamma": 2.0, "noise_scale": 0.03}),
+        ("Dehaze", "Haze (β=0.2, A=0.6)", add_haze, {"beta": 0.2, "A": 0.6}),
+        ("Derain", "Rain Streaks (L=3, n=800, α=0.6, veil=0.2)", add_rain, 
+         {"num_layers": 3, "streak_density": 800, "alpha": 0.6, "veil": 0.2}),
+        ("Lowlight", "Low-Light (γ=1.3, ns=0.01)", add_low_light, {"gamma": 1.3, "noise_scale": 0.01}),
     ]
 
     # applying each degradation
@@ -60,9 +56,8 @@ def main():
         np.random.seed(args.seed)
         degraded = func(gt, **params)
         p = compute_psnr(gt, degraded)
-        save_rgb_image(degraded, os.path.join(args.output_dir, f"{domain_id}.png"))
-        print(f"{domain_id}: {name:<30s} PSNR={p:>6.2f} dB")
-        results.append((domain_id, name, p, params))
+        print(f"{domain_id}: {name} PSNR={p:.2f} dB")
+        results.append((domain_id, name, p, params, degraded))
 
     # side-by-side comparison grid
     panel_h = 300
@@ -77,14 +72,13 @@ def main():
         parts = [f"{param.split('_')[-1]}={val}" for param, val in params.items()]
         line2 = " ".join(parts)
         cv2.putText(resized, line2, (10, 55), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5, (255, 255, 255), 1, cv2.LINE_AA)
+                    0.3, (255, 255, 255), 1, cv2.LINE_AA)
         return resized
 
     panels = []
 
-    for domain_id, _, psnr_val, params in results:
-        img_path = os.path.join(args.output_dir, f"{domain_id}.png")
-        img_bgr = cv2.imread(img_path)
+    for domain_id, _, psnr_val, params, degraded in results:
+        img_bgr = cv2.cvtColor((np.clip(degraded, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
         panels.append(make_panel(img_bgr, domain_id, psnr_val, params))
 
     top_row = np.concatenate(panels[:2], axis=1)

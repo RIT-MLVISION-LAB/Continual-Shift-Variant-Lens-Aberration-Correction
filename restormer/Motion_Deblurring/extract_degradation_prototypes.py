@@ -1,11 +1,11 @@
 # ------------------------------------------------------------------------
-# Restormer Adapters - Blur Prototype Extraction Script
+# Restormer Adapters - Degradation Prototype Extraction Script
 # Usage:
-#   PYTHONPATH=.. python extract_blur_prototypes.py \
-#       --weights ../experiments/archived_checkpoints/V1_thru_V6/net_g_latest.pth \
-#       --yaml_file Options/Shift_Variant_V1_thru_V6_Deblurring_Restormer_Adapters.yml \
-#       --data_root ../Motion_Deblurring/Datasets/train \
-#       --output prototypes.pth \
+#   PYTHONPATH=.. python extract_degradation_prototypes.py \
+#       --weights ../experiments/archived_checkpoints/D1_thru_D5_Adapters/net_g_latest.pth \
+#       --yaml_file Options/Degradations_D1_thru_D5_Restormer_Adapters.yml \
+#       --data_root Datasets/train \
+#       --output prototypes_degradation.pth \
 #       --max_samples 13800 (50% of all patches per domain)
 # ------------------------------------------------------------------------
 
@@ -22,6 +22,25 @@ import cv2
 import yaml
 
 from basicsr.models.archs.restormer_adapters_arch import RestormerAdapters
+
+
+DOMAINS = ["D1_deblur", "D2_denoise", "D3_dehaze", "D4_derain", "D5_lowlight"]
+
+DOMAIN_TO_DIR = {
+    "D1_deblur":  "ShiftVariant_V1",
+    "D2_denoise": "D2_denoise",
+    "D3_dehaze":  "D3_dehaze",
+    "D4_derain":  "D4_derain",
+    "D5_lowlight": "D5_lowlight",
+}
+
+DOMAIN_TO_ADAPTER = {
+    "D1_deblur": -1,
+    "D2_denoise": 0,
+    "D3_dehaze": 1,
+    "D4_derain": 2,
+    "D5_lowlight": 3,
+}
 
 
 def load_config(yaml_path):
@@ -95,19 +114,20 @@ def extract_prototypes(args):
 
     extractor = BottleneckExtractor(model)
 
-    num_variants = args.num_variants
-    print(f"\nExtracting prototypes for {num_variants} variants (V1 through V{num_variants})")
-    print(f"Feature extraction: backbone only (adapter_id=-1) for ALL variants")
+    domains = args.domains or DOMAINS
+    print(f"\nExtracting prototypes for {len(domains)} domains")
+    print(f"Feature extraction: backbone only (adapter_id=-1) for ALL domains")
 
     factor = 8  # padding factor for Restormer
 
     prototypes = {}
     metadata = {}
 
-    for variant in range(1, num_variants + 1):
-        data_dir = os.path.join(args.data_root, f"ShiftVariant_V{variant}", "input_crops")
+    for domain in domains:
+        dir_name = DOMAIN_TO_DIR[domain]
+        data_dir = os.path.join(args.data_root, dir_name, "input_crops")
         if not os.path.exists(data_dir):
-            print(f"[WARNING] Data directory not found for V{variant}: {data_dir}, skipping.")
+            print(f"[WARNING] Data directory not found for {domain}: {data_dir}, skipping.")
             continue
 
         files = natsorted(glob(os.path.join(data_dir, "*.png")))
@@ -121,12 +141,12 @@ def extract_prototypes(args):
             indices.sort()
             files = [files[i] for i in indices]
 
-        print(f"\nV{variant}: processing {len(files)} images from {data_dir}")
+        print(f"\n{domain}: processing {len(files)} images from {data_dir}")
 
         embedding_sum = None
         count = 0
 
-        for file_ in tqdm(files, desc=f"V{variant}", unit="img"):
+        for file_ in tqdm(files, desc=domain, unit="img"):
             img = np.float32(load_img(file_)) / 255.0
             img_tensor = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).cuda()
 
@@ -149,15 +169,16 @@ def extract_prototypes(args):
 
         prototype = F.normalize(embedding_sum / count, p=2, dim=0)  # [C]
 
-        prototypes[variant] = prototype
-        metadata[variant] = {
-            "variant": variant,
+        prototypes[domain] = prototype
+        metadata[domain] = {
+            "domain": domain,
+            "adapter_id": DOMAIN_TO_ADAPTER[domain],
             "num_samples": count,
             "data_dir": data_dir,
             "embedding_dim": prototype.shape[0],
         }
 
-        print(f"Prototype V{variant}: dim={prototype.shape[0]}, computed from {count} samples")
+        print(f"Prototype {domain}: dim={prototype.shape[0]}, computed from {count} samples")
 
     extractor.close()
 
@@ -177,41 +198,41 @@ def extract_prototypes(args):
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
     torch.save(save_dict, args.output)
     print(f"\nPrototypes saved to: {args.output}")
-    print(f"Variants extracted: {sorted(prototypes.keys())}")
+    print(f"Domains extracted: {sorted(prototypes.keys())}")
     print(f"Embedding dimension: {next(iter(prototypes.values())).shape[0]}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Extract blur domain prototypes from RestormerAdapters"
+        description="Extract degradation domain prototypes from RestormerAdapters"
     )
     parser.add_argument(
         "--weights", type=str,
-        default="../experiments/archived_checkpoints/V1_V2_V3_V4_V5_ft_V6_Adapters/net_g_latest.pth",
+        default="../experiments/archived_checkpoints/Degradations_D1_D2_D3_D4_ft_D5_Adapters/net_g_latest.pth",
         help="Path to RestormerAdapters checkpoint with all trained adapters",
     )
     parser.add_argument(
         "--yaml_file", type=str, 
-        default="Options/Shift_Variant_V1_V2_V3_V4_V5_ft_V6_Deblurring_Restormer_Adapters.yml",
+        default="Options/Degradations_D1_D2_D3_D4_ft_D5_Restormer_Adapters.yml",
         help="Path to YAML config for RestormerAdapters",
     )
     parser.add_argument(
         "--data_root", type=str, 
         default="Datasets/train",
-        help="Root directory containing train/ShiftVariant_V{k}/ subdirectories",
+        help="Root directory containing training subdirectories",
     )
     parser.add_argument(
         "--output", type=str, 
-        default="../experiments/archived_checkpoints/prototypes/blur_prototypes.pth",
+        default="../experiments/archived_checkpoints/prototypes/degradation_prototypes.pth",
         help="Output path for the prototypes .pth file",
     )
     parser.add_argument(
         "--max_samples", type=int, default=None,
-        help="Max training samples used for per variant prototype calculation (None = use all)",
+        help="Max training samples used for per domain prototype calculation (None = use all)",
     )
     parser.add_argument(
-        "--num_variants", type=int, default=6,
-        help="Number of variants to extract prototypes for",
+        "--domains", type=str, nargs="*", default=None, choices=DOMAINS,
+        help="Number of domains to extract prototypes for (default: all five)",
     )
 
     args = parser.parse_args()

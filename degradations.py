@@ -12,7 +12,7 @@ from scipy.ndimage import gaussian_filter
 
 def add_gaussian_noise(img, sigma=None):
     if sigma is None:
-        sigma = np.random.uniform(15, 50)
+        sigma = np.random.uniform(25, 70)
     noise = np.random.randn(*img.shape).astype(np.float32) * (sigma / 255.0)
     return np.clip(img + noise, 0.0, 1.0)
 
@@ -95,9 +95,9 @@ def add_haze(img, beta=None, A=None):
             raise RuntimeError(f"[degradations] Pre-trained MiDaS model unavailable ({e})")
 
     if beta is None:
-        beta = np.random.uniform(0.4, 1.0)
+        beta = np.random.uniform(0.2, 0.5)
     if A is None:
-        A = np.random.uniform(0.7, 0.95)
+        A = np.random.uniform(0.6, 0.7)
  
     # scaling depth to a physically meaningful range [0.5, 2.0] meters equiv, matching RESIDE-OTS range
     d = depth_map * 1.5 + 0.5
@@ -154,27 +154,32 @@ def _create_rain_layer(h, w, num_streaks=800, streak_length_range=(20, 60),
     return rain_layer
 
 
-def add_rain(img, num_layers=None, streak_density=None, alpha=None):
+def add_rain(img, num_layers=None, streak_density=None, alpha=None, veil=None):
     """
-    Synthesizes rain streaks via multi-layer parametric composition.
-    The rain model follows the additive streak formulation:
-        I_rain = I_clean + SUM_l(alpha_l * S_l)
-    where S_l are streak layers with varying density and depth-of-field
-    blur to simulate depth parallax.
+    Synthesizes rain streaks via multi-layer parametric composition with
+    atmospheric veiling to model the global visibility reduction caused
+    by suspended water droplets scattering light.
+    Model:
+        1. Streak composite: J_streak = J + alpha * SUM_l(S_l)
+        2. Atmospheric veiling: I_rain = (1 - veil) * J_streak + veil * A_rain
     Args:
         img: Clean image.
         num_layers: Number of rain layers (depth planes).
         streak_density: Base number of streaks per layer.
-        alpha: Global rain intensity.
+        alpha: Global rain streak intensity.
+        veil: Atmospheric veiling factor in [0, 1]. Controls global
+              contrast reduction from suspended droplet scattering.
     """
     h, w = img.shape[:2]
 
     if num_layers is None:
-        num_layers = np.random.randint(2, 5)
+        num_layers = np.random.randint(3, 10)
     if streak_density is None:
-        streak_density = np.random.randint(400, 1000)
+        streak_density = np.random.randint(800, 2000)
     if alpha is None:
-        alpha = np.random.uniform(0.3, 0.7)
+        alpha = np.random.uniform(0.6, 0.9)
+    if veil is None:
+        veil = np.random.uniform(0.2, 0.4)
 
     rain_accumulator = np.zeros((h, w), dtype=np.float32)
 
@@ -195,9 +200,16 @@ def add_rain(img, num_layers=None, streak_density=None, alpha=None):
 
         rain_accumulator += layer * (1.0 - 0.2 * depth_factor)
 
+    # streak composite
     rain_accumulator = np.clip(rain_accumulator, 0, 1)
     rain_rgb = rain_accumulator[:, :, None] * np.array([0.85, 0.85, 0.90], dtype=np.float32)
-    rainy = img + alpha * rain_rgb
+    streaked = img + alpha * rain_rgb
+    streaked = np.clip(streaked, 0.0, 1.0)
+
+    # atmospheric veiling from suspended droplets (global contrast reduction)
+    A_rain = 0.7  # gray atmospheric light from water droplet scattering
+    rainy = (1.0 - veil) * streaked + veil * A_rain
+
     return np.clip(rainy, 0.0, 1.0).astype(np.float32)
 
 
@@ -216,7 +228,7 @@ def add_low_light(img, gamma=None, noise_scale=None):
         noise_scale: Controls overall noise magnitude.
     """
     if gamma is None:
-        gamma = np.random.uniform(1.5, 2.5)
+        gamma = np.random.uniform(1.3, 2.8)
     if noise_scale is None:
         noise_scale = np.random.uniform(0.01, 0.04)
 
