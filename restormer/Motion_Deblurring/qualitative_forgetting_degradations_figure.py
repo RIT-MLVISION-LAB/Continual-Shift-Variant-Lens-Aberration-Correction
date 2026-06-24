@@ -1,14 +1,14 @@
 """
 3x6 qualitative figure: catastrophic forgetting under sequential FT vs
-ConDA's adapter-isolation preservation across all five Degradations D1-D5.
+RwF's adapter-isolation preservation across all five Degradations D1-D5.
 
 Layout (single test image rendered through five different degradations):
                     D1  |  D2 |  D3 |  D4 |  D5 |  GT
     Input         : [..]| [..]| [..]| [..]| [..]| [GT]
     Sequential FT : [..]| [..]| [..]| [..]| [..]| [GT]  (PSNR overlay)
-    ConDA (Ours)  : [..]| [..]| [..]| [..]| [..]| [GT]  (PSNR + router overlay)
+    RwF (Ours)  : [..]| [..]| [..]| [..]| [..]| [GT]  (PSNR + router overlay)
 
-ConDA inference uses the prototype router for adapter selection, so each cell
+RwF inference uses the prototype router for adapter selection, so each cell
 also reports the predicted degradation (->Dk) and a check / cross indicating
 whether the router selected the correct adapter for the degradation being processed.
 """
@@ -24,28 +24,28 @@ from skimage.metrics import peak_signal_noise_ratio as psnr_fn
 
 
 DOMAIN_TO_VAL_DIR = {
-    "D1_deblur":   "ShiftVariant_V1_Full_Images",
-    "D2_denoise":  "D2_denoise_Full_Images",
-    "D3_dehaze":   "D3_dehaze_Full_Images",
-    "D4_derain":   "D4_derain_Full_Images",
+    "D1_denoise": "D1_denoise_Full_Images",
+    "D2_deblur": "D2_deblur_Full_Images",
+    "D3_derain": "D3_derain_Full_Images",
+    "D4_dehaze": "D4_dehaze_Full_Images",
     "D5_lowlight": "D5_lowlight_Full_Images",
 }
 
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--conda_yaml",
+    p.add_argument("--rwf_yaml",
                    default="./Options/Degradations_D1_D2_D3_D4_ft_D5_Restormer_Adapters.yml")
-    p.add_argument("--conda_weights",
+    p.add_argument("--rwf_weights",
                    default="../experiments/archived_checkpoints/" \
                    "Degradations_D1_D2_D3_D4_ft_D5_Adapters/net_g_latest.pth")
     p.add_argument("--prototypes", 
-                   default="../experiments/archived_checkpoints/prototypes/degradation_prototypes.pth")
+                   default="../experiments/archived_checkpoints/prototypes/proto_enc1_v2.pth")
     p.add_argument("--seq_weights",
                    default="../experiments/archived_checkpoints/" \
                    "Degradations_D1_D2_D3_D4_ft_D5/net_g_latest.pth")
     p.add_argument("--data_root", default="./Datasets/val")
-    p.add_argument("--filename", default="0891.png")  # options: 806, 834, 891
+    p.add_argument("--filename", default="0834.png")  # options: 806, 834, 891
     p.add_argument("--crop_size", type=int, default=320)
     p.add_argument("--output",
                    default="../../outputs/forgetting_visualizations/" \
@@ -95,7 +95,7 @@ def build_vanilla_restormer(weights_path):
     return model.cuda().eval()
 
 
-def build_conda_restormer(yaml_file, weights):
+def build_rwf_restormer(yaml_file, weights):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from test_domain_incremental import build_model
 
@@ -112,7 +112,7 @@ class BottleneckExtractor:
     def __init__(self, model):
         self.model = model
         self._features = {}
-        self._handle = model.latent[-1].register_forward_hook(self._hook)
+        self._handle = model.encoder_level1[-1].register_forward_hook(self._hook)
 
     def _hook(self, m, i, o):
         self._features["b"] = o
@@ -120,8 +120,13 @@ class BottleneckExtractor:
     def extract(self, x):
         with torch.no_grad():
             _ = self.model(x, adapter_id=-1)
-        e = F.adaptive_avg_pool2d(self._features["b"], 1).flatten(1)
-        return F.normalize(e, p=2, dim=1)
+
+        emb_mean = F.adaptive_avg_pool2d(self._features["b"], 1).flatten(1)
+        emb_mean_n = F.normalize(emb_mean, p=2, dim=1)
+        emb_std  = self._features["b"].flatten(2).std(dim=2)
+        emb_std_n  = F.normalize(emb_std,  p=2, dim=1)
+        emb = F.normalize(torch.cat([emb_mean_n, emb_std_n], dim=1), p=2, dim=1)
+        return emb.squeeze(0)
 
     def close(self):
         self._handle.remove()
@@ -159,10 +164,10 @@ def annotate_routing(ax, pred_key, correct):
 def main():
     args = parse_args()
 
-    conda = build_conda_restormer(args.conda_yaml, args.conda_weights)
+    rwf = build_rwf_restormer(args.rwf_yaml, args.rwf_weights)
     seq = build_vanilla_restormer(args.seq_weights)
     prototypes = torch.load(args.prototypes, map_location="cpu")["prototypes"]
-    extractor = BottleneckExtractor(conda)
+    extractor = BottleneckExtractor(rwf)
 
     rows = []
     for degradation, path in DOMAIN_TO_VAL_DIR.items():
@@ -179,19 +184,19 @@ def main():
         pred_key = route(emb, prototypes)
         pred_key = int(pred_key.split("_")[0][-1])
         adapter_id = pred_key - 2
-        conda_out = infer(conda, blur, adapter_id=adapter_id)
+        rwf_out = infer(rwf, blur, adapter_id=adapter_id)
 
         seq_psnr = compute_psnr(seq_out, gt)
-        conda_psnr = compute_psnr(conda_out, gt)
+        rwf_psnr = compute_psnr(rwf_out, gt)
         correct = pred_key == d
 
         print(f"D{d}: Seq = {seq_psnr:6.2f}dB | "
-              f"ConDA(->d{pred_key} {'✓' if correct else 'X'}) = {conda_psnr:6.2f}dB")
+              f"RwF(->d{pred_key} {'✓' if correct else 'X'}) = {rwf_psnr:6.2f}dB")
 
         rows.append({
             "d": d, "blur": blur, "gt": gt,
             "seq": seq_out, "seq_psnr": seq_psnr,
-            "conda": conda_out, "conda_psnr": conda_psnr,
+            "rwf": rwf_out, "rwf_psnr": rwf_psnr,
             "pred_key": pred_key, "correct": correct,
         })
 
@@ -203,7 +208,7 @@ def main():
     plt.rcParams["ps.fonttype"] = 42
 
     _, axes = plt.subplots(3, 6, figsize=(15, 6.6))
-    row_labels = ["Input", "Sequential FT", "ConDA (Ours)"]
+    row_labels = ["Input", "Sequential FT", "RwF (Ours)"]
     col_titles = [f"D{d+1}" for d in range(len(DOMAIN_TO_VAL_DIR))] + ["GT"]
 
     for r in range(3):
@@ -216,8 +221,8 @@ def main():
                     ax.imshow(rows[c]["seq"])
                     annotate_psnr(ax, rows[c]["seq_psnr"])
                 else:
-                    ax.imshow(rows[c]["conda"])
-                    annotate_psnr(ax, rows[c]["conda_psnr"])
+                    ax.imshow(rows[c]["rwf"])
+                    annotate_psnr(ax, rows[c]["rwf_psnr"])
                     annotate_routing(ax, rows[c]["pred_key"], rows[c]["correct"])
             else:
                 ax.imshow(rows[0]["gt"])
@@ -228,8 +233,7 @@ def main():
             if r == 0:
                 ax.set_title(col_titles[c], fontsize=10)
 
-        axes[r, 0].set_ylabel(row_labels[r], fontsize=10, rotation=90,
-                              labelpad=8, fontweight="bold")
+        axes[r, 0].set_ylabel(row_labels[r], fontsize=10, rotation=90, labelpad=8)
 
     plt.subplots_adjust(wspace=0.04, hspace=0.06)
     plt.savefig(args.output, format="pdf", bbox_inches="tight", dpi=200)

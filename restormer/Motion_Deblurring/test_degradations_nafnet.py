@@ -1,20 +1,20 @@
-### Example code for testing cross-degradation domains using Restormer
-### Standard backbone testing (evaluate D1 -> D2 Restormer on D2 data):
-###   PYTHONPATH=.. python test_degradations.py \
-###      --weights ../experiments/archived_checkpoints/Degradations_D1_ft_D2/net_g_latest.pth \
-###      --yaml_file Options/Degradations_D1_ft_D2_Restormer.yml \
+### Example code for testing cross-degradation domains using NAFNet
+### Standard backbone testing (evaluate D1 -> D2 NAFNet on D2 data):
+###   PYTHONPATH=.. python test_degradations_nafnet.py \
+###      --weights ../experiments/archived_checkpoints/Degradations_NAFNet_D1_ft_D2/net_g_latest.pth \
+###      --yaml_file Options/Degradations_D1_ft_D2_NAFNet.yml \
 ###      --domain D2_deblur --save_images
 ###
 ### Adapter testing (evaluate D2 adapter on D2 data):
-###   PYTHONPATH=.. python test_degradations.py \
-###      --weights ../experiments/archived_checkpoints/Degradations_D1_ft_D2_Adapters/net_g_latest.pth \
-###      --yaml_file Options/Degradations_D1_ft_D2_Restormer_Adapters.yml \
+###   PYTHONPATH=.. python test_degradations_nafnet.py \
+###      --weights ../experiments/archived_checkpoints/Degradations_NAFNet_D1_ft_D2_Adapters/net_g_latest.pth \
+###      --yaml_file Options/Degradations_D1_ft_D2_NAFNet_Adapters.yml \
 ###      --domain D2_deblur --use_adapters --adapter_id 0
 ###
 ### Adapter testing (evaluate on D1 data with backbone only, no adapters):
-###   PYTHONPATH=.. python test_degradations.py \
-###      --weights ../experiments/archived_checkpoints/Degradations_D1_ft_D2_Adapters/net_g_latest.pth \
-###      --yaml_file Options/Degradations_D1_ft_D2_Restormer_Adapters.yml \
+###   PYTHONPATH=.. python test_degradations_nafnet.py \
+###      --weights ../experiments/archived_checkpoints/Degradations_NAFNet_D1_ft_D2_Adapters/net_g_latest.pth \
+###      --yaml_file Options/Degradations_D1_ft_D2_NAFNet_Adapters.yml \
 ###      --domain D1_denoise --use_adapters --adapter_id -1
 
 import numpy as np
@@ -28,8 +28,8 @@ import torch.nn.functional as F
 
 from natsort import natsorted
 from glob import glob
-from basicsr.models.archs.restormer_arch import Restormer
-from basicsr.models.archs.restormer_adapters_arch import RestormerAdapters
+from basicsr.models.archs.nafnet_arch import NAFNet
+from basicsr.models.archs.nafnet_adapters_arch import NAFNetAdapters
 from skimage import img_as_ubyte
 from skimage.metrics import peak_signal_noise_ratio as psnr
 from skimage.metrics import structural_similarity as ssim
@@ -76,7 +76,7 @@ def build_model(args):
 
     if use_adapters:
         adapter_config = network_config.pop('adapter_config', None)
-        model = RestormerAdapters(**network_config, adapter_config=adapter_config)
+        model = NAFNetAdapters(**network_config, adapter_config=adapter_config)
         checkpoint = torch.load(args.weights, map_location='cpu')
         state_dict = checkpoint.get('params', checkpoint)
 
@@ -84,7 +84,7 @@ def build_model(args):
         model.prepare_adapter_list_for_loading(state_dict)
         model.load_state_dict(state_dict, strict=False)
     else:
-        model = Restormer(**network_config)
+        model = NAFNet(**network_config)
         checkpoint = torch.load(args.weights, map_location='cpu')
         state_dict = checkpoint.get('params', checkpoint)
         model.load_state_dict(state_dict)
@@ -94,7 +94,7 @@ def build_model(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Cross-Degradation Testing using Restormer')
+    parser = argparse.ArgumentParser(description='Cross-Degradation Testing using NAFNet')
     parser.add_argument('--input_dir', default='./Datasets/', type=str,
                         help='Directory of validation/test images')
     parser.add_argument('--result_dir', default='./results/', type=str,
@@ -111,7 +111,7 @@ def main():
 
     parser.add_argument('--use_adapters', action='store_true',
                         help='Use adapter mode. '
-                        'When enabled, RestormerAdapters is used instead of plain Restormer.')
+                        'When enabled, NAFNetAdapters is used instead of plain NAFNet.')
     parser.add_argument('--adapter_id', type=int, default=-1,
                         help='Adapter to activate during inference (default: -1).'
                              ' -1 : backbone only, no adapter applied.'
@@ -131,11 +131,11 @@ def main():
 
     if use_adapters:
         if args.adapter_id == -1:
-            print(f"Mode: RestormerAdapters, backbone only (adapter_id={args.adapter_id})")
+            print(f"Mode: NAFNetAdapters, backbone only (adapter_id={args.adapter_id})")
         else:
-            print(f"Mode: RestormerAdapters, with adapter {args.adapter_id}")
+            print(f"Mode: NAFNetAdapters, with adapter {args.adapter_id}")
     else:
-        print(f"Mode: plain Restormer backbone")
+        print(f"Mode: plain NAFNet backbone")
     print(f"Evaluating on {args.domain}")
 
     # D1 uses real CBSD68 denoising dataset; D2-D5 use synthesized domains
@@ -146,7 +146,7 @@ def main():
 
     inp_dir = os.path.join(args.input_dir, 'val', dataset_name, 'input_crops')
     gt_dir = os.path.join(args.input_dir, 'val', dataset_name, 'target_crops')
-    result_dir = os.path.join(args.result_dir, 
+    result_dir = os.path.join(args.result_dir,
                               f'{dataset_name}_Adapters' if use_adapters else f'{dataset_name}')
 
     if args.save_images:
@@ -161,8 +161,6 @@ def main():
 
     print(f"Testing on {len(files)} images from {dataset_name} (validation split)")
 
-    factor = 8  # padding factor for Restormer window size
-
     psnr_values = []
     ssim_values = []
 
@@ -175,13 +173,8 @@ def main():
             img_tensor = torch.from_numpy(img).permute(2, 0, 1)
             input_ = img_tensor.unsqueeze(0).cuda()
 
-            # pad to multiple of factor
+            # NAFNet pads internally via check_image_size and crops back; no explicit padding needed
             h, w = input_.shape[2], input_.shape[3]
-            H = ((h + factor) // factor) * factor
-            W = ((w + factor) // factor) * factor
-            padh = H - h if h % factor != 0 else 0
-            padw = W - w if w % factor != 0 else 0
-            input_ = F.pad(input_, (0, padw, 0, padh), 'reflect')
 
             if use_adapters:
                 restored = model(input_, adapter_id=args.adapter_id)

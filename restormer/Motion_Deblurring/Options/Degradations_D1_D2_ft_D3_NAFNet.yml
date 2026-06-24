@@ -1,6 +1,6 @@
-## D2 (Deblurring) with D1 (Gaussian Denoising) Pretrained Weights
+## D3 (Deraining) with D1 (SIDD Denoising) -> D2 (Deblurring) Pretrained Weights
 # general settings
-name: Degradations_D1_ft_D2_Restormer
+name: Degradations_D1_D2_ft_D3_NAFNet
 model_type: ImageCleanModel
 scale: 1
 num_gpu: 1 # set to 0 for cpu mode, adjust based on available GPUs
@@ -9,10 +9,10 @@ manual_seed: 100
 # dataset and data loader settings
 datasets:
   train:
-    name: TrainSet_Degradations_D1_ft_D2
+    name: TrainSet_Degradations_D1_D2_ft_D3_NAFNet
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/train/D2_deblur/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/train/D2_deblur/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/train/D3_derain/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/train/D3_derain/input_crops
     geometric_augs: true
 
     filename_tmpl: "{}"
@@ -35,29 +35,25 @@ datasets:
     prefetch_mode: ~
 
   val:
-    name: ValSet_Degradations_D1_ft_D2
+    name: ValSet_Degradations_D1_D2_ft_D3_NAFNet
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/val/D2_deblur/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/val/D2_deblur/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/val/D3_derain/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/val/D3_derain/input_crops
     io_backend:
       type: disk
 
-# network structures
+# network structures - NAFNet-SIDD-width32 topology
 network_g:
-  type: Restormer
-  inp_channels: 3
-  out_channels: 3
-  dim: 48
-  num_blocks: [4, 6, 6, 8]
-  num_refinement_blocks: 4
-  heads: [1, 2, 4, 8]
-  ffn_expansion_factor: 2.66
-  bias: False
-  LayerNorm_type: WithBias
+  type: NAFNet
+  img_channel: 3
+  width: 32
+  middle_blk_num: 12
+  enc_blk_nums: [2, 2, 4, 8]
+  dec_blk_nums: [2, 2, 2, 2]
 
 # path
 path:
-  pretrain_network_g: ./experiments/archived_checkpoints/Degradations_D1_only/gaussian_color_denoising_blind.pth
+  pretrain_network_g: ./experiments/archived_checkpoints/Degradations_NAFNet_D1_ft_D2/net_g_latest.pth
   strict_load_g: false
   resume_state: ~
 
@@ -68,8 +64,8 @@ train:
   use_grad_clip: true
 
   # Single-cycle cosine annealing: 2e-4 -> 1e-6 over 100k iterations.
-  # Lower starting LR than Restormer's from-scratch 3e-4 because we are
-  # fine-tuning from a Gaussian-denoising pretrained backbone.
+  # Lower starting LR than NAFNet's from-scratch 1e-3 because we are
+  # fine-tuning from a SIDD-denoising pretrained backbone.
   scheduler:
     type: CosineAnnealingRestartCyclicLR
     periods: [100000]
@@ -95,7 +91,7 @@ train:
 
 # validation settings
 val:
-  window_size: 8
+  window_size: 0  # NAFNet handles padding internally via check_image_size
   val_freq: !!float 4e3
   save_img: false
   rgb2bgr: true

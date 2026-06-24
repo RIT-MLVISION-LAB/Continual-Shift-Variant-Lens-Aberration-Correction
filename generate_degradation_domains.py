@@ -2,10 +2,10 @@
 Generate cross-task domain-incremental image restoration benchmark from DIV2K.
 
 Domain sequence:
-    D1: Deblurring (V1) -> D2: Denoising -> D3: Dehazing -> D4: Deraining -> D5: Low-light
+    D1: Gaussian Denoise (pre-trained backbone) -> D2: Deblur -> D3: Derain -> D4: Dehaze -> D5: Lowlight
 
 Usage:
-    python generate_domains.py \
+    python generate_degradation_domains.py \
         --div2k_dir /path/to/DIV2K \
         --output_dir /path/to/output \
         --seed 42
@@ -17,16 +17,18 @@ Expected DIV2K directory structure:
 
 Output structure:
     output_dir/
-    ├── D2_denoise/
+    ├── D1_denoise/
     │   ├── train/
     │   │   ├── degraded/     # 800 noisy images
     │   │   └── gt/           # 800 clean images
     │   └── val/
     │       ├── degraded/     # 100 noisy images
     │       └── gt/           # 100 clean images
-    ├── D3_dehaze/
+    ├── D2_deblur/
     │   └── ...
-    ├── D4_derain/
+    ├── D3_derain/
+    │   └── ...
+    ├── D4_dehaze/
     │   └── ...
     ├── D5_lowlight/
     │   └── ...
@@ -45,13 +47,14 @@ import numpy as np
 import cv2
 from tqdm import tqdm
 
-from degradations import add_gaussian_noise, add_haze, add_rain, add_low_light
+from degradations import add_gaussian_noise, add_motion_blur, add_haze, add_rain, add_low_light
 
 
 DOMAIN_FUNC_MAP = {
-    "D2_denoise": add_gaussian_noise,
-    "D3_dehaze": add_haze,
-    "D4_derain": add_rain,
+    "D1_denoise": add_gaussian_noise,
+    "D2_deblur": add_motion_blur,
+    "D3_derain": add_rain,
+    "D4_dehaze": add_haze,
     "D5_lowlight": add_low_light,
 }
 
@@ -71,15 +74,13 @@ def save_image(img, path):
 
 
 def process_single_image(src_path, degraded_path, gt_path, 
-                         domain_key, img_seed, copy_gt=True):
+                         domain_key, img_seed):
     np.random.seed(img_seed)
     func = DOMAIN_FUNC_MAP[domain_key]
     img = load_image(src_path)
     degraded = func(img)
     save_image(degraded, degraded_path)
-
-    if copy_gt:
-        save_image(img, gt_path)
+    save_image(img, gt_path)
 
     meta = {
         "source": os.path.basename(src_path),
@@ -90,7 +91,7 @@ def process_single_image(src_path, degraded_path, gt_path,
 
 
 def process_domain(domain_key, src_dir, output_dir, split, 
-                   global_seed, num_workers=8, copy_gt=True):
+                   global_seed, num_workers=8):
     src_files = sorted([f for f in os.listdir(src_dir)])
     if not src_files:
         raise RuntimeError(f"No images found in {src_dir}")
@@ -108,6 +109,10 @@ def process_domain(domain_key, src_dir, output_dir, split,
     print(f"Generating {domain_key} [{split}]: {len(src_files)} images")
     print(f"{'-'*60}")
 
+    # Haze requires MiDaS which uses GPU
+    if domain_key == "D4_dehaze":
+        num_workers = 1  # force single-worker for haze to avoid loading multiple MiDaS instances
+
     all_meta = []
 
     if num_workers <= 1:
@@ -120,7 +125,7 @@ def process_domain(domain_key, src_dir, output_dir, split,
             img_seed = global_seed + domain_idx * 10000 + split_offset + i
 
             meta = process_single_image(src_path, degraded_path, gt_path, 
-                                        domain_key, img_seed, copy_gt)
+                                        domain_key, img_seed)
             all_meta.append(meta)
     else:
         futures = {}
@@ -134,7 +139,7 @@ def process_domain(domain_key, src_dir, output_dir, split,
                 img_seed = global_seed + domain_idx * 10000 + split_offset + i
 
                 fut = executor.submit(process_single_image, src_path, degraded_path, 
-                                      gt_path, domain_key, img_seed, copy_gt)
+                                      gt_path, domain_key, img_seed)
                 futures[fut] = fname
 
             for fut in tqdm(as_completed(futures), total=len(futures), desc=domain_key):
@@ -159,15 +164,13 @@ def main():
     parser.add_argument("--output_dir", type=str, default="datasets/multiple_degradations", 
                         help="Output directory for generated benchmark")
     parser.add_argument("--domains", type=str, nargs="*", default=None, 
-                        help="Domains to generate (e.g., D3_derain). Default: all dmoains")
+                        help="Domains to generate (e.g., D3_derain). Default: all domains")
     parser.add_argument("--splits", type=str, nargs="*", default=["train", "val"], 
                         choices=["train", "val"], help="Which split(s) to generate")
     parser.add_argument("--seed", type=int, default=42, 
                         help="Global random seed for reproducibility")
     parser.add_argument("--num_workers", type=int, default=8, 
                         help="Number of parallel workers")
-    parser.add_argument("--no_copy_gt", action="store_true", 
-                        help="Use symlinks instead of copying GT images (saves disk space)")
     args = parser.parse_args()
 
     div2k_root = Path(args.div2k_dir)
@@ -193,13 +196,10 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
     all_metadata = {
-        "benchmark": "DIV2K-CrossTask-5Domain-Incremental",
+        "benchmark": "DIV2K-CrossTask-4Domain-Incremental",
         "seed": args.seed,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "domain_order": [
-            "D1_deblur_v1",
-            *[d for d in DOMAIN_FUNC_MAP if d in domains],
-        ],
+        "domain_order": list(DOMAIN_FUNC_MAP.keys()),
         "domains": {},
     }
 
@@ -209,8 +209,8 @@ def main():
 
         for split in args.splits:
             meta = process_domain(domain_key=domain_key, src_dir=str(split_dirs[split]), 
-                                  output_dir=args.output_dir, split=split, global_seed=args.seed,
-                                  num_workers=workers, copy_gt=not args.no_copy_gt)
+                                  output_dir=args.output_dir, split=split, 
+                                  global_seed=args.seed, num_workers=workers)
             all_metadata["domains"][domain_key][split] = {
                 "num_images": meta["num_images"]
             }
@@ -224,12 +224,9 @@ def main():
     print(f"{'-'*60}")
     print(f"Output: {args.output_dir}")
     print(f"Metadata: {meta_path}")
-    print(f"\nFull domain sequence for incremental training:")
-    print(f"D1: {'deblur_v1':15s}")
-    print(f"Synthesized domains: {len(domains)} (D2-D5)")
-    for split in args.splits:
-        n = list(split_dirs[split].iterdir())
-        print(f"{split}: {len([f for f in n if f.suffix.lower() in {'.png'}])} images per domain")
+    print(f"\nDomain order ({len(DOMAIN_FUNC_MAP)} stages):")
+    for i, d in enumerate(DOMAIN_FUNC_MAP.keys(), 1):
+        print(f"Stage {i}: {d}")
 
 
 if __name__ == "__main__":

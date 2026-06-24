@@ -8,7 +8,7 @@ import argparse
 import numpy as np
 import cv2
 
-from degradations import add_gaussian_noise, add_haze, add_rain, add_low_light
+from degradations import add_motion_blur, add_rain, add_haze, add_low_light
 
 
 def load_real_image(path):
@@ -42,12 +42,22 @@ def main():
     cv2.imwrite(os.path.join(args.output_dir, "GT.png"), img_bgr)
 
     # defining degradations
+    # # lowest params
+    # degradations = [
+    #     ("Deblur", "Motion Blur (L=11, θ=0°, C=0.0)", add_motion_blur, {"length": 11, "angle_deg": 0, "curvature": 0.0}),
+    #     ("Derain", "Rain Streaks (L=3, n=500, α=0.5, veil=0.0)", add_rain, 
+    #      {"num_layers": 3, "streak_density": 500, "alpha": 0.5, "veil": 0.0}),
+    #     ("Dehaze", "Haze (β=0.05, A=0.75, D=1.5)", add_haze, {"beta": 0.05, "A": 0.75, "depth_scale": 1.5}),
+    #     ("Lowlight", "Low-Light (γ=1.8, ns=0.01)", add_low_light, {"gamma": 1.8, "noise_scale": 0.01}),
+    # ]
+
+    # highest params
     degradations = [
-        ("Denoise", "Gaussian Noise (σ=25)", add_gaussian_noise, {"sigma": 25.0}),
-        ("Dehaze", "Haze (β=0.2, A=0.6)", add_haze, {"beta": 0.2, "A": 0.6}),
-        ("Derain", "Rain Streaks (L=3, n=800, α=0.6, veil=0.2)", add_rain, 
-         {"num_layers": 3, "streak_density": 800, "alpha": 0.6, "veil": 0.2}),
-        ("Lowlight", "Low-Light (γ=1.3, ns=0.01)", add_low_light, {"gamma": 1.3, "noise_scale": 0.01}),
+        ("Deblur", "Motion Blur (L=41, θ=90°, C=0.6)", add_motion_blur, {"length": 41, "angle_deg": 90, "curvature": 0.6}),
+        ("Derain", "Rain Streaks (L=10, n=2500, α=1.0, veil=0.5)", add_rain, 
+         {"num_layers": 10, "streak_density": 2500, "alpha": 1.0, "veil": 0.5}),
+        ("Dehaze", "Haze (β=0.8, A=1.0, D=3.5)", add_haze, {"beta": 0.8, "A": 1.0, "depth_scale": 3.5}),
+        ("Lowlight", "Low-Light (γ=4.5, ns=0.06)", add_low_light, {"gamma": 4.5, "noise_scale": 0.06}),
     ]
 
     # applying each degradation
