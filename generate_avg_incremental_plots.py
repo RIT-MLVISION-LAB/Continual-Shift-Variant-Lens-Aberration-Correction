@@ -1,6 +1,6 @@
 """
 Generates an average incremental PSNR comparison plot from two
-lower-triangular PSNR matrices (ConDA adapter vs. sequential fine-tuning).
+lower-triangular PSNR matrices (RwF adapter vs. sequential fine-tuning).
 
 At each stage T_k the plotted value is:
     AIP(T_k) = (1/k) * sum_{j=1}^{k} PSNR(T_k, j)
@@ -13,11 +13,27 @@ Input format (JSON, per method):
     after sequential training through task i+1.
 
 Usage:
-    python generate_avg_incremental_plot.py \
-        --adapter conda_psnr_matrix.json \
-        --sequential sequential_psnr_matrix.json \
-        --output avg_incremental_plot.pdf \
-        --domain-labels "Optical Blur" "Denoising" "Dehazing" "Deraining" "Low-Light"
+    # All four curves (matches paper Fig. 1b): Restormer (blue) + NAFNet (red),
+    # adapter (solid) vs. sequential FT (dashed):
+    python generate_avg_incremental_plots.py \
+        --restormer-adapter degradations_restormer_adapter_psnr_matrix.json \
+        --restormer-sequential degradations_restormer_psnr_matrix.json \
+        --nafnet-adapter degradations_nafnet_adapter_psnr_matrix.json \
+        --nafnet-sequential degradations_nafnet_psnr_matrix.json \
+        --output outputs/forgetting_visualizations/degradations_rwf_vs_sequential_avg_incremental.pdf \
+        --domain-labels "Noise" "Blur" "Rain" "Haze" "Lowlight"
+
+    # Any subset works too (e.g. NAFNet backbone only):
+    python generate_avg_incremental_plots.py \
+        --nafnet-adapter nafnet_adapter_psnr_matrix.json \
+        --nafnet-sequential nafnet_psnr_matrix.json \
+        --output nafnet_only.pdf
+
+Color/style legend:
+    RwF-Restormer     -> solid  blue
+    Restormer (Seq. FT) -> dashed blue
+    RwF-NAFNet        -> solid  red
+    NAFNet (Seq. FT)    -> dashed red
 """
 
 import argparse
@@ -30,22 +46,56 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 
+# Color encodes the backbone (blue = Restormer, red = NAFNet);
+# linestyle encodes the method (solid = adapter / RwF, dashed = sequential FT).
+RESTORMER_COLOR = "#4477AA"  # blue
+NAFNET_COLOR = "#EE6677"     # red
+
 METHOD_STYLES = {
-    "adapter": {
-        "color": "#4477AA",
+    "restormer_adapter": {
+        "color": RESTORMER_COLOR,
         "marker": "o",
         "linestyle": "-",
-        "label": "ConDA (Adapter)",
+        "alpha": 1.0,
+        "label": "RwF-Restormer (Ours)",
     },
-    "sequential": {
-        "color": "#EE6677",
+    "restormer_sequential": {
+        "color": RESTORMER_COLOR,
+        "marker": "o",
+        "linestyle": "--",
+        "alpha": 0.7,
+        "label": "Restormer",
+    },
+    "nafnet_adapter": {
+        "color": NAFNET_COLOR,
+        "marker": "s",
+        "linestyle": "-",
+        "alpha": 1.0,
+        "label": "RwF-NAFNet (Ours)",
+    },
+    "nafnet_sequential": {
+        "color": NAFNET_COLOR,
         "marker": "s",
         "linestyle": "--",
-        "label": "Sequential FT",
+        "alpha": 0.7,
+        "label": "NAFNet",
     },
 }
 
-FILL_COLOR = "#4477AA"
+# (adapter_key, sequential_key, fill_color) pairs whose forgetting gap is shaded
+BACKBONE_PAIRS = [
+    ("restormer_adapter", "restormer_sequential", RESTORMER_COLOR),
+    ("nafnet_adapter", "nafnet_sequential", NAFNET_COLOR),
+]
+
+# Fixed draw order so solid adapter lines sit above their dashed counterparts
+PLOT_ORDER = [
+    "restormer_sequential",
+    "nafnet_sequential",
+    "restormer_adapter",
+    "nafnet_adapter",
+]
+
 FILL_ALPHA = 0.12
 
 
@@ -112,17 +162,19 @@ def compute_avg_incremental(psnr_matrix):
     return [np.mean(row) for row in psnr_matrix]
 
 
-def plot_avg_incremental(adapter_matrix, sequential_matrix, output_path,
+def plot_avg_incremental(matrices, output_path,
                          domain_labels=None, figsize=None, y_limits=None):
+    """matrices: dict mapping method key -> lower-triangular PSNR matrix (or None)."""
     setup_plot_style()
 
-    n_stages_a = len(adapter_matrix)
-    n_stages_s = len(sequential_matrix)
-    assert n_stages_a == n_stages_s, f"Matrix size mismatch!"
-    n_stages = n_stages_a
+    provided = {k: m for k, m in matrices.items() if m is not None}
+    assert provided, "At least one PSNR matrix must be provided."
 
-    avg_adapter = compute_avg_incremental(adapter_matrix)
-    avg_sequential = compute_avg_incremental(sequential_matrix)
+    n_stages_set = {len(m) for m in provided.values()}
+    assert len(n_stages_set) == 1, f"Matrix size mismatch across methods: {n_stages_set}"
+    n_stages = n_stages_set.pop()
+
+    avg = {k: compute_avg_incremental(m) for k, m in provided.items()}
 
     if figsize is None:
         width = min(3.5 + 0.3 * n_stages, 7.0)
@@ -131,46 +183,52 @@ def plot_avg_incremental(adapter_matrix, sequential_matrix, output_path,
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     x_stages = list(range(1, n_stages + 1))
 
-    ax.fill_between(x_stages, avg_sequential, avg_adapter, 
-                    where=[a >= s for a, s in zip(avg_adapter, avg_sequential)],
-                    color=FILL_COLOR, alpha=FILL_ALPHA, interpolate=True, zorder=1)
+    # Per-backbone shaded forgetting gap + delta annotations
+    for adp_key, seq_key, fill_color in BACKBONE_PAIRS:
+        if adp_key not in avg or seq_key not in avg:
+            continue
+        a_vals, s_vals = avg[adp_key], avg[seq_key]
+        ax.fill_between(x_stages, s_vals, a_vals,
+                        where=[a >= s for a, s in zip(a_vals, s_vals)],
+                        color=fill_color, alpha=FILL_ALPHA, interpolate=True, zorder=1)
+        for k, (a, s) in enumerate(zip(a_vals, s_vals)):
+            delta = a - s
+            if abs(delta) > 0.05:  # skip negligible gaps
+                y_mid = a - 1.25
+                ax.annotate(f"Δ{delta:.2f}", xy=(x_stages[k], y_mid),
+                            color=fill_color, fontsize=7.5, ha="center", va="center",
+                            xytext=(0, 0), textcoords="offset points")
 
-    for key in ("adapter", "sequential"):
+    for key in PLOT_ORDER:
+        if key not in avg:
+            continue
         style = METHOD_STYLES[key]
-        y = avg_adapter if key == "adapter" else avg_sequential
-        ax.plot(x_stages, y, color=style["color"], linestyle=style["linestyle"], 
-                marker=style["marker"], markeredgecolor="white", 
+        ax.plot(x_stages, avg[key], color=style["color"], linestyle=style["linestyle"],
+                marker=style["marker"], markeredgecolor="white", alpha=style["alpha"],
                 markeredgewidth=0.8, label=style["label"], zorder=3)
 
-    for k, (a, s) in enumerate(zip(avg_adapter, avg_sequential)):
-        delta = a - s
-        if abs(delta) > 0.05:  # skip negligible gaps
-            y_mid = (a + s) / 2
-            ax.annotate(f"Δ{delta:.2f}", xy=(x_stages[k], y_mid), 
-                        fontsize=7.5, ha="left", va="center", 
-                        xytext=(-8, 0), textcoords="offset points")
-
     ax.set_xlabel("Incremental Training Stage", labelpad=6)
-    ax.set_ylabel("Avg. PSNR (dB)", labelpad=6)
+    ax.set_ylabel("Avg. Incremental PSNR (dB)", labelpad=6)
     ax.set_xticks(x_stages)
 
     if domain_labels and len(domain_labels) == n_stages:
         xtick_labels = [domain_labels[0] if i == 0 else f"+{domain_labels[i]}" for i in range(n_stages)]
     else:
         xtick_labels = [f"D{i + 1}" if i == 0 else f"+D{i + 1}" for i in range(n_stages)]
-    ax.set_xticklabels(xtick_labels, ha="right")
+    ax.set_xticklabels(xtick_labels)
 
     if y_limits:
         ax.set_ylim(y_limits)
     else:
-        all_vals = avg_adapter + avg_sequential
+        all_vals = [v for vals in avg.values() for v in vals]
         y_min = min(all_vals) - 1.5
         y_max = max(all_vals) + 1.5
         ax.set_ylim(y_min, y_max)
 
     ax.set_xlim(0.6, n_stages + 0.4)
 
-    legend = ax.legend(loc="best", borderaxespad=0.3)
+    ncol = 2 if len(avg) > 2 else 1
+    legend = ax.legend(loc="best", borderaxespad=0.3, ncol=ncol)
     legend.get_frame().set_linewidth(0.5)
 
     ax.spines["top"].set_visible(False)
@@ -190,14 +248,18 @@ def plot_avg_incremental(adapter_matrix, sequential_matrix, output_path,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compare average incremental PSNR: ConDA adapter vs. sequential fine-tuning",
+        description="Compare average incremental PSNR: RwF adapter vs. sequential fine-tuning",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--adapter", type=str, required=True,
-                        help="JSON file: lower-triangular PSNR matrix for ConDA adapter")
-    parser.add_argument("--sequential", type=str, required=True,
-                        help="JSON file: lower-triangular PSNR matrix for sequential fine-tuning")
+    parser.add_argument("--restormer-adapter", type=str, default=None,
+                        help="JSON file: lower-triangular PSNR matrix for RwF-Restormer (solid blue)")
+    parser.add_argument("--restormer-sequential", type=str, default=None,
+                        help="JSON file: lower-triangular PSNR matrix for sequential FT Restormer (dashed blue)")
+    parser.add_argument("--nafnet-adapter", type=str, default=None,
+                        help="JSON file: lower-triangular PSNR matrix for RwF-NAFNet (solid red)")
+    parser.add_argument("--nafnet-sequential", type=str, default=None,
+                        help="JSON file: lower-triangular PSNR matrix for sequential FT NAFNet (dashed red)")
     parser.add_argument("--output", type=str, 
                         default="outputs/forgetting_visualizations/avg_incremental_plot.pdf",
                         help="Output PDF path")
@@ -210,14 +272,24 @@ def main():
 
     args = parser.parse_args()
 
-    adapter_matrix = load_psnr_matrix(args.adapter)
-    sequential_matrix = load_psnr_matrix(args.sequential)
+    arg_to_key = {
+        "restormer_adapter": args.restormer_adapter,
+        "restormer_sequential": args.restormer_sequential,
+        "nafnet_adapter": args.nafnet_adapter,
+        "nafnet_sequential": args.nafnet_sequential,
+    }
+    if not any(arg_to_key.values()):
+        parser.error("Provide at least one PSNR matrix "
+                     "(--restormer-adapter / --restormer-sequential / "
+                     "--nafnet-adapter / --nafnet-sequential).")
+
+    matrices = {k: load_psnr_matrix(p) for k, p in arg_to_key.items() if p is not None}
 
     y_limits = None
     if args.y_min is not None and args.y_max is not None:
         y_limits = (args.y_min, args.y_max)
 
-    plot_avg_incremental(adapter_matrix, sequential_matrix, output_path=args.output, 
+    plot_avg_incremental(matrices, output_path=args.output, 
                          domain_labels=args.domain_labels, y_limits=y_limits)
 
 

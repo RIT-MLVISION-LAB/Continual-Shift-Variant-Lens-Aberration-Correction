@@ -3,19 +3,19 @@
 ###   PYTHONPATH=.. python test_degradations.py \
 ###      --weights ../experiments/archived_checkpoints/Degradations_D1_ft_D2/net_g_latest.pth \
 ###      --yaml_file Options/Degradations_D1_ft_D2_Restormer.yml \
-###      --domain D2_denoise --save_images
+###      --domain D2_deblur --save_images
 ###
 ### Adapter testing (evaluate D2 adapter on D2 data):
 ###   PYTHONPATH=.. python test_degradations.py \
 ###      --weights ../experiments/archived_checkpoints/Degradations_D1_ft_D2_Adapters/net_g_latest.pth \
 ###      --yaml_file Options/Degradations_D1_ft_D2_Restormer_Adapters.yml \
-###      --domain D2_denoise --use_adapters --adapter_id 0
+###      --domain D2_deblur --use_adapters --adapter_id 0
 ###
 ### Adapter testing (evaluate on D1 data with backbone only, no adapters):
 ###   PYTHONPATH=.. python test_degradations.py \
 ###      --weights ../experiments/archived_checkpoints/Degradations_D1_ft_D2_Adapters/net_g_latest.pth \
 ###      --yaml_file Options/Degradations_D1_ft_D2_Restormer_Adapters.yml \
-###      --domain D1_deblur --use_adapters --adapter_id -1
+###      --domain D1_denoise --use_adapters --adapter_id -1
 
 import numpy as np
 import os
@@ -37,10 +37,10 @@ import cv2
 
 
 VALID_DOMAINS = [
-    "D1_deblur",   # existing V1 optical blur (backbone domain)
-    "D2_denoise",
-    "D3_dehaze",
-    "D4_derain",
+    "D1_denoise",
+    "D2_deblur",
+    "D3_derain",
+    "D4_dehaze",
     "D5_lowlight",
 ]
 
@@ -138,9 +138,9 @@ def main():
         print(f"Mode: plain Restormer backbone")
     print(f"Evaluating on {args.domain}")
 
-    # D1 uses the existing shift-variant blur dataset; D2-D5 use synthesized domains
-    if args.domain == "D1_deblur":
-        dataset_name = 'ShiftVariant_V1_Full_Images'
+    # D1 uses real CBSD68 denoising dataset; D2-D5 use synthesized domains
+    if args.domain == "D1_denoise":
+        dataset_name = 'CBSD68_sigma25_Full_Images'
     else:
         dataset_name = f'{args.domain}_Full_Images'
 

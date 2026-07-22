@@ -1,18 +1,18 @@
 ## This script extracts patches from the cross-degradation benchmark
 ##
 ## Source dataset structure:
-##   datasets/multiple_degradations/D2_denoise/train/degraded/
-##   datasets/multiple_degradations/D2_denoise/train/gt/
-##   datasets/multiple_degradations/D2_denoise/val/degraded/
-##   datasets/multiple_degradations/D2_denoise/val/gt/
-##   ... (same for D3_dehaze, D4_derain, D5_lowlight)
+##   datasets/multiple_degradations/D2_deblur/train/degraded/
+##   datasets/multiple_degradations/D2_deblur/train/gt/
+##   datasets/multiple_degradations/D2_deblur/val/degraded/
+##   datasets/multiple_degradations/D2_deblur/val/gt/
+##   ... (same for D3_derain, D4_dehaze, D5_lowlight)
 ##
 ## Output structure:
-##   Datasets/train/D2_denoise/input_crops/
-##   Datasets/train/D2_denoise/target_crops/
-##   Datasets/val/D2_denoise/input_crops/
-##   Datasets/val/D2_denoise/target_crops/
-##   ... (same for D3_dehaze, D4_derain, D5_lowlight)
+##   Datasets/train/D2_deblur/input_crops/
+##   Datasets/train/D2_deblur/target_crops/
+##   Datasets/val/D2_deblur/input_crops/
+##   Datasets/val/D2_deblur/target_crops/
+##   ... (same for D3_derain, D4_dehaze, D5_lowlight)
 
 import cv2
 import numpy as np
@@ -24,7 +24,7 @@ from tqdm import tqdm
 from joblib import Parallel, delayed
 
 
-VALID_DOMAINS = ["D2_denoise", "D3_dehaze", "D4_derain", "D5_lowlight"]
+VALID_DOMAINS = ["D1_denoise", "D2_deblur", "D3_derain", "D4_dehaze", "D5_lowlight"]
 
 
 def extract_patches(lr_img, hr_img, patch_size, overlap, p_max=0):
@@ -294,10 +294,10 @@ if __name__ == '__main__':
         python generate_patches_degradations.py
 
         # Prepare a single domain
-        python generate_patches_degradations.py --domains D2_denoise
+        python generate_patches_degradations.py --domains D2_deblur
 
         # Prepare two specific domains
-        python generate_patches_degradations.py --domains D3_dehaze D5_lowlight
+        python generate_patches_degradations.py --domains D3_derain D5_lowlight
 
         # Custom paths and patch sizes
         python generate_patches_degradations.py \\

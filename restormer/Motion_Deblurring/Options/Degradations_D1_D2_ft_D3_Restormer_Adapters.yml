@@ -1,9 +1,9 @@
-## D3 (Dehazing) with D1 (Deblurring Variant 1) Pretrained Weights -> D2 (Denoising) Adapters
+## D3 (Deraining) with D1 (Gaussian Denoising) Pretrained Weights and D2 (Deblurring) Adapters
 # general settings
 name: Degradations_D1_D2_ft_D3_Restormer_Adapters
 model_type: AdapterModel
 scale: 1
-num_gpu: 4 # set to 0 for cpu mode, adjust based on available GPUs
+num_gpu: 1 # set to 0 for cpu mode, adjust based on available GPUs
 manual_seed: 100
 
 # adapter settings
@@ -16,8 +16,8 @@ datasets:
   train:
     name: TrainSet_Degradations_D1_D2_ft_D3_Adapters
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/train/D3_dehaze/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/train/D3_dehaze/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/train/D3_derain/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/train/D3_derain/input_crops
     geometric_augs: true
 
     filename_tmpl: "{}"
@@ -29,10 +29,12 @@ datasets:
     num_worker_per_gpu: 8
     batch_size_per_gpu: 8
 
-    mini_batch_sizes: [8]  # options: [8], [8,6,4,2] (for progressive training) (High priority)
-    iters: [50000] # options: [50000], [100000], [200000], [40000, 20000, 20000, 20000] (for progressive training with 100k iterations) (High priority)
-    gt_size: 224 # options: 128, 224 (High priority)
-    gt_sizes: [224] # options: [128], [128,160,192,224] (for progressive training) (High priority)
+    ### ------- Training on single fixed-patch size 224x224---------
+    mini_batch_sizes: [8]   
+    iters: [100000]
+    gt_size: 224   
+    gt_sizes: [224]
+    ### ------------------------------------------------------------
 
     dataset_enlarge_ratio: 1
     prefetch_mode: ~
@@ -40,8 +42,8 @@ datasets:
   val:
     name: ValSet_Degradations_D1_D2_ft_D3_Adapters
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/val/D3_dehaze/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/val/D3_dehaze/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/val/D3_derain/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/val/D3_derain/input_crops
     io_backend:
       type: disk
 
@@ -74,15 +76,18 @@ path:
 
 # training settings
 train:
-  total_iter: 50000  # options: 50000, 100000, 200000 (High priority)
-  warmup_iter: -1 # options: -1 (no warm up), 2000 (Low priority)
+  total_iter: 100000
+  warmup_iter: -1 # no warm up
   use_grad_clip: true
 
+  # Single-cycle cosine annealing: 2e-4 -> 1e-6 over 100k iterations.
+  # Lower starting LR than Restormer's from-scratch 3e-4 because we are
+  # fine-tuning from a Gaussian-denoising pretrained backbone.
   scheduler:
     type: CosineAnnealingRestartCyclicLR
-    periods: [50000]  # options: [50000], [50000, 50000] (for 100k iters), [100000, 100000] (for 200k iters) (Low priority)
-    restart_weights: [1]  # options: [1], [1, 1] (for multiple cycles) (Low priority)
-    eta_mins: [0.0003]  # options: [0.0003], [0.000001], [0.0003, 0.000001] (for multiple cycles) (Low priority)
+    periods: [100000]
+    restart_weights: [1]
+    eta_mins: [0.000001]
 
   mixing_augs:
     mixup: false
@@ -91,7 +96,7 @@ train:
 
   optim_g:
     type: AdamW
-    lr: !!float 2e-4  # options: 1e-4, 2e-4, 3e-4 (Medium priority)
+    lr: !!float 2e-4
     weight_decay: !!float 1e-4
     betas: [0.9, 0.999]
 
@@ -104,7 +109,7 @@ train:
 # validation settings
 val:
   window_size: 8
-  val_freq: !!float 2e3
+  val_freq: !!float 4e3
   save_img: false
   rgb2bgr: true
   use_image: true

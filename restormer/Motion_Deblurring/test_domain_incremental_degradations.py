@@ -1,10 +1,10 @@
 # ------------------------------------------------------------------------
-# Restormer Adapters - Degradation Domain-Incremental Evaluation Script
+# Restormer Adapters - Degradation Domain-Incremental Evaluation
 # Usage:
 #   PYTHONPATH=.. python test_domain_incremental_degradations.py \
-#       --weights ../experiments/archived_checkpoints/D1_thru_D5_Adapters/net_g_latest.pth \
-#       --yaml_file Options/Degradations_D1_thru_D5_Restormer_Adapters.yml \
-#       --prototypes degradation_prototypes.pth \
+#       --weights ../experiments/archived_checkpoints/Degradations_D1_D2_D3_D4_ft_D5_Adapters/net_g_latest.pth \
+#       --yaml_file Options/Degradations_D1_D2_D3_D4_ft_D5_Restormer_Adapters.yml \
+#       --prototypes ../experiments/archived_checkpoints/prototypes/proto_enc1_v2.pth \
 #       --data_root Datasets/val
 # ------------------------------------------------------------------------
 
@@ -26,23 +26,21 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 from skimage.metrics import structural_similarity as ssim
 
 
-DOMAINS = ["D1_deblur", "D2_denoise", "D3_dehaze", "D4_derain", "D5_lowlight"]
+DOMAINS = ["D1_denoise", "D2_deblur", "D3_derain", "D4_dehaze", "D5_lowlight"]
 
-# Maps domain name to the Full_Images validation subdirectory
 DOMAIN_TO_VAL_DIR = {
-    "D1_deblur":   "ShiftVariant_V1_Full_Images",
-    "D2_denoise":  "D2_denoise_Full_Images",
-    "D3_dehaze":   "D3_dehaze_Full_Images",
-    "D4_derain":   "D4_derain_Full_Images",
-    "D5_lowlight": "D5_lowlight_Full_Images",
+    "D1_denoise": "CBSD68_sigma25_Full_Images",
+    "D2_deblur": "D2_deblur",
+    "D3_derain": "D3_derain",
+    "D4_dehaze": "D4_dehaze",
+    "D5_lowlight": "D5_lowlight",
 }
 
-# Maps domain name to adapter_id: D1=-1 (backbone), D2=0, D3=1, D4=2, D5=3
 DOMAIN_TO_ADAPTER = {
-    "D1_deblur": -1,
-    "D2_denoise": 0,
-    "D3_dehaze": 1,
-    "D4_derain": 2,
+    "D1_denoise": -1,
+    "D2_deblur": 0,
+    "D3_derain": 1,
+    "D4_dehaze": 2,
     "D5_lowlight": 3,
 }
 
@@ -60,8 +58,11 @@ def load_img(filepath):
     return cv2.cvtColor(cv2.imread(filepath), cv2.COLOR_BGR2RGB)
 
 
-def save_img(filepath, img):
-    cv2.imwrite(filepath, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+def get_hook_target(model, hook_layer):
+    if "[" in hook_layer:
+        name, rest = hook_layer.split("[", 1)
+        return getattr(model, name)[int(rest.rstrip("]"))]
+    return getattr(model, hook_layer)
 
 
 def build_model(args):
@@ -82,34 +83,50 @@ def build_model(args):
     print(f"Loaded checkpoint: {args.weights}")
     print(f"Committed adapters: {num_committed}")
     print(f"Available adapter IDs:")
-    print("-1 (backbone / D1_deblur)")
+    print("-1 (backbone / D1_denoise)")
     print(f"Committed: {', '.join(str(i) for i in range(num_committed))}")
     print(f"Current: {num_committed}")
 
     return model
 
 
-class BottleneckExtractor:
-    """
-    Hooks the last latent TransformerBlock to capture bottleneck features.
-    Used only for domain identification (backbone-only forward pass).
-    """
-    def __init__(self, model):
+class FeatureMatcher:
+    def __init__(self, model, proto_config, prototypes_gpu):
         self.model = model
+        self.prototypes = prototypes_gpu  # {domain: [D] on GPU}
+        self._handle = None
         self._features = {}
-        self._handle = model.latent[-1].register_forward_hook(self._hook_fn)
 
-    def _hook_fn(self, module, input, output):
-        self._features["bottleneck"] = output
+        hook_layer = proto_config["hook_layer"]
+        self._handle = get_hook_target(model, hook_layer).register_forward_hook(self._hook)
 
-    def extract_embedding(self, img_tensor):
+    def _hook(self, m, inp, out):
+        if isinstance(out, tuple):
+            out = out[0]
+        self._features["bn"] = out
+
+    def embedding(self, img_tensor):
         with torch.no_grad():
-            _ = self.model(img_tensor, adapter_id=-1)  # backbone only
+            _ = self.model(img_tensor, adapter_id=-1)
+        bn = self._features["bn"]
+    
+        ## Prototype method 1: GAP only (dim=C)
+        # emb = F.adaptive_avg_pool2d(bn, 1).flatten(1)           # [B,C]
+        # emb = F.normalize(emb, p=2, dim=1)
 
-        bottleneck = self._features["bottleneck"]
-        embedding = F.adaptive_avg_pool2d(bottleneck, 1).flatten(1)  # [1, C]
-        embedding = F.normalize(embedding, p=2, dim=1)
-        return embedding
+        ## Prototype method 2: GAP + std (dim=2C)
+        # emb_mean = F.adaptive_avg_pool2d(bn, 1).flatten(1)     # [B,C]
+        # emb_std  = bn.flatten(2).std(dim=2)                    # [B,C]
+        # emb = F.normalize(torch.cat([emb_mean, emb_std], dim=1), p=2, dim=1)
+
+        ## Prototype method 3: GAP + std with separate L2 norms (dim=2C)
+        emb_mean = F.adaptive_avg_pool2d(bn, 1).flatten(1)     # [B,C]
+        emb_mean_n = F.normalize(emb_mean, p=2, dim=1)
+        emb_std  = bn.flatten(2).std(dim=2)                    # [B,C]
+        emb_std_n  = F.normalize(emb_std,  p=2, dim=1)
+        emb = F.normalize(torch.cat([emb_mean_n, emb_std_n], dim=1), p=2, dim=1)
+
+        return emb.squeeze(0)
 
     def restore(self, img_tensor, adapter_id):
         with torch.no_grad():
@@ -117,36 +134,30 @@ class BottleneckExtractor:
         return restored
 
     def close(self):
-        self._handle.remove()
+        if self._handle is not None:
+            self._handle.remove()
 
 
-def match_domain(embedding, prototypes):
-    similarities = {}
-    emb = embedding.squeeze(0)  # [C]
-
-    for domain, proto in prototypes.items():
-        proto = proto.to(emb.device)
-        sim = torch.dot(emb, proto).item()
-        similarities[domain] = sim
-
-    predicted_domain = max(similarities, key=similarities.get)
-    return predicted_domain
+def match_domain(emb, prototypes_gpu):
+    sims = {d: torch.dot(emb, p).item() for d, p in prototypes_gpu.items()}
+    return max(sims, key=sims.get)
 
 
 def evaluate(args):
-    model = build_model(args)
-    model.cuda()
-    model.eval()
-
-    extractor = BottleneckExtractor(model)
+    model = build_model(args).cuda().eval()
 
     proto_data = torch.load(args.prototypes, map_location="cpu")
     prototypes = proto_data["prototypes"]
+    proto_cfg  = proto_data["config"]
     proto_meta = proto_data.get("metadata", {})
 
     print(f"\nLoaded prototypes from: {args.prototypes}")
-    for domain, meta in sorted(proto_meta.items()):
-        print(f"  {domain}: dim={meta['embedding_dim']}, samples={meta['num_samples']}, adapter_id={meta['adapter_id']}")
+    print(f"hook_layer = {proto_cfg.get('hook_layer', 'latent[-1]')}")
+    for d, m in sorted(proto_meta.items()):
+        print(f"{d}: dim={m['embedding_dim']}, samples={m['num_samples']}, adapter_id={m['adapter_id']}")
+
+    prototypes_gpu = {d: p.cuda() for d, p in prototypes.items()}
+    matcher = FeatureMatcher(model, proto_cfg, prototypes_gpu)
 
     domain_list = sorted(prototypes.keys())
     num_domains = len(domain_list)
@@ -196,7 +207,6 @@ def evaluate(args):
         print(f"\nTesting {gt_domain} ({len(files)} images, oracle adapter_id={gt_adapter_id})")
 
         for file_ in tqdm(files, desc=gt_domain, unit="img"):
-            torch.cuda.ipc_collect()
             torch.cuda.empty_cache()
 
             img = np.float32(load_img(file_)) / 255.0
@@ -204,15 +214,14 @@ def evaluate(args):
             _, _, h, w = img_tensor.shape
             pad_h = (factor - h % factor) % factor
             pad_w = (factor - w % factor) % factor
-            if pad_h > 0 or pad_w > 0:
-                img_tensor = F.pad(img_tensor, (0, pad_w, 0, pad_h), "reflect")
+            img_tensor = F.pad(img_tensor, (0, pad_w, 0, pad_h), "reflect") if (pad_h or pad_w) else img_tensor
 
             # --- Pass 1: backbone-only → domain identification ---
-            embedding = extractor.extract_embedding(img_tensor)
-            predicted_domain = match_domain(embedding.cpu(), prototypes)
+            embedding = matcher.embedding(img_tensor)
+            predicted_domain = match_domain(embedding, prototypes_gpu)
             predicted_adapter_id = DOMAIN_TO_ADAPTER[predicted_domain]
 
-            is_correct = predicted_domain == gt_domain
+            is_correct = (predicted_domain == gt_domain)
             total_correct += int(is_correct)
             total_images += 1
 
@@ -221,11 +230,11 @@ def evaluate(args):
             results[gt_domain]["predictions"].append(predicted_domain)
 
             # --- Pass 2: predicted adapter → restoration ---
-            restored_pred = extractor.restore(img_tensor, adapter_id=predicted_adapter_id)
+            restored_pred = matcher.restore(img_tensor, adapter_id=predicted_adapter_id)
             restored_pred = torch.clamp(restored_pred[:, :, :h, :w], 0, 1).cpu()
 
             # --- Oracle adapter → restoration (for comparison) ---
-            restored_oracle = extractor.restore(img_tensor, adapter_id=gt_adapter_id)
+            restored_oracle = matcher.restore(img_tensor, adapter_id=gt_adapter_id)
             restored_oracle = torch.clamp(restored_oracle[:, :, :h, :w], 0, 1).cpu()
 
             if has_gt:
@@ -246,7 +255,7 @@ def evaluate(args):
                     results[gt_domain]["psnr_oracle"].append(psnr_oracle)
                     results[gt_domain]["ssim_oracle"].append(ssim_oracle)
 
-    extractor.close()
+    matcher.close()
 
     print("\nDEGRADATION DOMAIN-INCREMENTAL EVALUATION RESULTS")
     print("-" * 70)
@@ -299,8 +308,8 @@ def evaluate(args):
             if pred_d in d_to_idx:
                 confusion[d_to_idx[gt_d], d_to_idx[pred_d]] += 1
 
-    SHORT = {"D1_deblur": "D1", "D2_denoise": "D2", "D3_dehaze": "D3",
-             "D4_derain": "D4", "D5_lowlight": "D5"}
+    SHORT = {"D1_denoise": "D1", "D2_deblur": "D2", "D3_derain": "D3",
+             "D4_dehaze": "D4", "D5_lowlight": "D5"}
 
     print(f"\nConfusion Matrix (rows=GT, cols=predicted):")
     header = "       " + "".join(f"  {SHORT[d]:<5}" for d in domain_list)
@@ -332,7 +341,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--prototypes", type=str,
-        default="../experiments/archived_checkpoints/prototypes/degradation_prototypes.pth",
+        default="../experiments/archived_checkpoints/prototypes/proto_enc1_v2.pth",
         help="Path to degradation prototypes .pth file",
     )
     parser.add_argument(

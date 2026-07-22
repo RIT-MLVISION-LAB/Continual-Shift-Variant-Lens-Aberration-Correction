@@ -11,11 +11,11 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
-DOMAINS = ["D2_denoise", "D3_dehaze", "D4_derain", "D5_lowlight"]
-COLORS = {"D2_denoise": "#1f77b4", "D3_dehaze": "#ffeb0e",
-          "D4_derain": "#2ca02c", "D5_lowlight": "#d62728"}
-LABELS = {"D2_denoise": "Denoise", "D3_dehaze": "Dehaze",
-          "D4_derain": "Derain", "D5_lowlight": "Low-Light"}
+DOMAINS = ["D2_deblur", "D3_derain", "D4_dehaze", "D5_lowlight"]
+COLORS = {"D2_deblur": "#1f77b4", "D3_derain": "#ffeb0e",
+          "D4_dehaze": "#2ca02c", "D5_lowlight": "#d62728"}
+LABELS = {"D2_deblur": "Deblur", "D3_derain": "Derain",
+          "D4_dehaze": "Dehaze", "D5_lowlight": "Lowlight"}
 
 
 def compute_psnr(gt, deg):
