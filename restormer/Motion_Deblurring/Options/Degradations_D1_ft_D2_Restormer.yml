@@ -1,21 +1,21 @@
-## Shift-Variant Blur Deblurring for Star Phase Mask Variant 2
+## D2 (Denoising) with D1 (Deblurring Variant 1) Pretrained Weights
 # general settings
-name: Shift_Variant_V2_Deblurring_Restormer
+name: Degradations_D1_ft_D2_Restormer
 model_type: ImageCleanModel
 scale: 1
-num_gpu: 8  # set to 0 for cpu mode, adjust based on available GPUs
+num_gpu: 4 # set to 0 for cpu mode, adjust based on available GPUs
 manual_seed: 100
 
 # dataset and data loader settings
 datasets:
   train:
-    name: TrainSet_ShiftVariant_V2
+    name: TrainSet_Degradations_D1_ft_D2
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/train/ShiftVariant_V2/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/train/ShiftVariant_V2/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/train/D2_denoise/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/train/D2_denoise/input_crops
     geometric_augs: true
 
-    filename_tmpl: '{}'
+    filename_tmpl: "{}"
     io_backend:
       type: disk
 
@@ -42,10 +42,10 @@ datasets:
     prefetch_mode: ~
 
   val:
-    name: ValSet_ShiftVariant_V2
+    name: ValSet_Degradations_D1_ft_D2
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/val/ShiftVariant_V2/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/val/ShiftVariant_V2/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/val/D2_denoise/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/val/D2_denoise/input_crops
     io_backend:
       type: disk
 
@@ -55,16 +55,16 @@ network_g:
   inp_channels: 3
   out_channels: 3
   dim: 48
-  num_blocks: [4,6,6,8]
+  num_blocks: [4, 6, 6, 8]
   num_refinement_blocks: 4
-  heads: [1,2,4,8]
+  heads: [1, 2, 4, 8]
   ffn_expansion_factor: 2.66
   bias: False
   LayerNorm_type: WithBias
 
 # path
 path:
-  pretrain_network_g: ~
+  pretrain_network_g: ./experiments/archived_checkpoints/V1_only/net_g_latest.pth
   strict_load_g: true
   resume_state: ~
 
@@ -79,10 +79,10 @@ train:
   # 2nd cycle: cosine annealing (3e-4 to 1e-6) for 208k iters.
   scheduler:
     type: CosineAnnealingRestartCyclicLR
-    periods: [92000, 208000]       
+    periods: [92000, 208000]
     restart_weights: [1,1]
-    eta_mins: [0.0003,0.000001]   
-  
+    eta_mins: [0.0003,0.000001]
+
   mixing_augs:
     mixup: false
     mixup_beta: 1.2
@@ -93,7 +93,7 @@ train:
     lr: !!float 3e-4
     weight_decay: !!float 1e-4
     betas: [0.9, 0.999]
-  
+
   # losses
   pixel_opt:
     type: L1Loss
@@ -110,8 +110,12 @@ val:
   max_minibatch: 8
 
   metrics:
-    psnr: # metric name, can be arbitrary
+    psnr:
       type: calculate_psnr
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: calculate_ssim
       crop_border: 0
       test_y_channel: false
 

@@ -1,18 +1,18 @@
-## Shift-Variant Blur Deblurring for Star Phase Mask Variant 2
+## Shift-Variant Blur Deblurring for Star Phase Mask Variant 3 with Variant 1 -> 2 Pretrained Weights
 # general settings
-name: Shift_Variant_V2_Deblurring_Restormer
+name: Shift_Variant_V1_V2_ft_V3_Deblurring_Restormer
 model_type: ImageCleanModel
 scale: 1
-num_gpu: 8  # set to 0 for cpu mode, adjust based on available GPUs
+num_gpu: 4  # set to 0 for cpu mode, adjust based on available GPUs
 manual_seed: 100
 
 # dataset and data loader settings
 datasets:
   train:
-    name: TrainSet_ShiftVariant_V2
+    name: TrainSet_ShiftVariant_V1_V2_ft_V3
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/train/ShiftVariant_V2/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/train/ShiftVariant_V2/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/train/ShiftVariant_V3/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/train/ShiftVariant_V3/input_crops
     geometric_augs: true
 
     filename_tmpl: '{}'
@@ -42,10 +42,10 @@ datasets:
     prefetch_mode: ~
 
   val:
-    name: ValSet_ShiftVariant_V2
+    name: ValSet_ShiftVariant_V1_V2_ft_V3
     type: Dataset_PairedImage
-    dataroot_gt: ./Motion_Deblurring/Datasets/val/ShiftVariant_V2/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/val/ShiftVariant_V2/input_crops
+    dataroot_gt: ./Motion_Deblurring/Datasets/val/ShiftVariant_V3/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/val/ShiftVariant_V3/input_crops
     io_backend:
       type: disk
 
@@ -64,7 +64,7 @@ network_g:
 
 # path
 path:
-  pretrain_network_g: ~
+  pretrain_network_g: ./experiments/archived_checkpoints/V1_ft_V2/net_g_latest.pth
   strict_load_g: true
   resume_state: ~
 
@@ -110,8 +110,12 @@ val:
   max_minibatch: 8
 
   metrics:
-    psnr: # metric name, can be arbitrary
+    psnr:
       type: calculate_psnr
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: calculate_ssim
       crop_border: 0
       test_y_channel: false
 

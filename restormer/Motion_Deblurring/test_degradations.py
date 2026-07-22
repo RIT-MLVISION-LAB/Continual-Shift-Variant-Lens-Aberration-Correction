@@ -1,21 +1,21 @@
-### Example code for testing Shift-Variant Blur Deblurring using Restormer
-### Standard backbone testing:
-###   PYTHONPATH=.. python test_shift_variant_blur.py \
-###      --weights ../experiments/archived_checkpoints/V1_only/net_g_latest.pth \
-###      --yaml_file Options/Shift_Variant_V1_Deblurring_Restormer.yml \
-###      --variant 1 --save_images
+### Example code for testing cross-degradation domains using Restormer
+### Standard backbone testing (evaluate D1 -> D2 Restormer on D2 data):
+###   PYTHONPATH=.. python test_degradations.py \
+###      --weights ../experiments/archived_checkpoints/Degradations_D1_ft_D2/net_g_latest.pth \
+###      --yaml_file Options/Degradations_D1_ft_D2_Restormer.yml \
+###      --domain D2_denoise --save_images
 ###
-### Adapter testing (evaluate V2 adapter on V2 data):
-###   PYTHONPATH=.. python test_shift_variant_blur.py \
-###      --weights ../experiments/archived_checkpoints/V1_ft_V2_Adapters/net_g_latest.pth \
-###      --yaml_file Options/Shift_Variant_V1_ft_V2_Deblurring_Restormer_Adapters.yml \
-###      --variant 2 --use_adapters --adapter_id 0 \
+### Adapter testing (evaluate D2 adapter on D2 data):
+###   PYTHONPATH=.. python test_degradations.py \
+###      --weights ../experiments/archived_checkpoints/Degradations_D1_ft_D2_Adapters/net_g_latest.pth \
+###      --yaml_file Options/Degradations_D1_ft_D2_Restormer_Adapters.yml \
+###      --domain D2_denoise --use_adapters --adapter_id 0
 ###
-### Adapter testing (evaluate V2 adapter on V1 data, backbone only, no adapters):
-###   PYTHONPATH=.. python test_shift_variant_blur.py \
-###      --weights ../experiments/archived_checkpoints/V1_ft_V2_Adapters/net_g_latest.pth \
-###      --yaml_file Options/Shift_Variant_V1_ft_V2_Deblurring_Restormer_Adapters.yml \
-###      --variant 1 --use_adapters --adapter_id -1 \
+### Adapter testing (evaluate on D1 data with backbone only, no adapters):
+###   PYTHONPATH=.. python test_degradations.py \
+###      --weights ../experiments/archived_checkpoints/Degradations_D1_ft_D2_Adapters/net_g_latest.pth \
+###      --yaml_file Options/Degradations_D1_ft_D2_Restormer_Adapters.yml \
+###      --domain D1_deblur --use_adapters --adapter_id -1
 
 import numpy as np
 import os
@@ -34,6 +34,15 @@ from skimage import img_as_ubyte
 from skimage.metrics import peak_signal_noise_ratio as psnr
 from skimage.metrics import structural_similarity as ssim
 import cv2
+
+
+VALID_DOMAINS = [
+    "D1_deblur",   # existing V1 optical blur (backbone domain)
+    "D2_denoise",
+    "D3_dehaze",
+    "D4_derain",
+    "D5_lowlight",
+]
 
 
 def load_img(filepath):
@@ -68,7 +77,7 @@ def build_model(args):
     if use_adapters:
         adapter_config = network_config.pop('adapter_config', None)
         model = RestormerAdapters(**network_config, adapter_config=adapter_config)
-        checkpoint = torch.load(args.weights, map_location='cpu')  # backbone + adapters
+        checkpoint = torch.load(args.weights, map_location='cpu')
         state_dict = checkpoint.get('params', checkpoint)
 
         # pre-allocating adapter_list before loading state_dict to avoid key mismatches
@@ -85,7 +94,7 @@ def build_model(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Shift-Variant Blur Deblurring using Restormer')
+    parser = argparse.ArgumentParser(description='Cross-Degradation Testing using Restormer')
     parser.add_argument('--input_dir', default='./Datasets/', type=str,
                         help='Directory of validation/test images')
     parser.add_argument('--result_dir', default='./results/', type=str,
@@ -93,21 +102,21 @@ def main():
     parser.add_argument('--weights', type=str, required=True,
                         help='Path to model weights (.pth checkpoint)')
     parser.add_argument('--yaml_file', type=str, required=True,
-                        default='Options/Deblurring_Restormer.yml',
                         help='Path to model YAML config file.')
-    parser.add_argument('--variant', type=int, default=1,
-                        help='Variant number to evaluate on (1–6); controls which dataset is loaded')
+    parser.add_argument('--domain', type=str, required=True,
+                        choices=VALID_DOMAINS,
+                        help='Degradation domain to evaluate on')
     parser.add_argument('--save_images', action='store_true',
                         help='Save restored images to result_dir')
 
     parser.add_argument('--use_adapters', action='store_true',
-                        help='Use adapter mode. ' \
+                        help='Use adapter mode. '
                         'When enabled, RestormerAdapters is used instead of plain Restormer.')
     parser.add_argument('--adapter_id', type=int, default=-1,
                         help='Adapter to activate during inference (default: -1).'
                              ' -1 : backbone only, no adapter applied.'
                              ' k : adapter_list[k] for a previously committed domain.'
-                             ' Ignored when --adapter_yml is not set.')
+                             ' Ignored when --use_adapters is not set.')
 
     args = parser.parse_args()
     model, use_adapters = build_model(args)
@@ -124,15 +133,21 @@ def main():
         if args.adapter_id == -1:
             print(f"Mode: RestormerAdapters, backbone only (adapter_id={args.adapter_id})")
         else:
-            print(f"Mode: RestormerAdapters, with adapters {args.adapter_id}")
+            print(f"Mode: RestormerAdapters, with adapter {args.adapter_id}")
     else:
         print(f"Mode: plain Restormer backbone")
-    print(f"Evaluating on variant V{args.variant}")
+    print(f"Evaluating on {args.domain}")
 
-    dataset_name = f'ShiftVariant_V{args.variant}_Full_Images'
+    # D1 uses the existing shift-variant blur dataset; D2-D5 use synthesized domains
+    if args.domain == "D1_deblur":
+        dataset_name = 'ShiftVariant_V1_Full_Images'
+    else:
+        dataset_name = f'{args.domain}_Full_Images'
+
     inp_dir = os.path.join(args.input_dir, 'val', dataset_name, 'input_crops')
     gt_dir = os.path.join(args.input_dir, 'val', dataset_name, 'target_crops')
-    result_dir = os.path.join(args.result_dir, dataset_name)
+    result_dir = os.path.join(args.result_dir, 
+                              f'{dataset_name}_Adapters' if use_adapters else f'{dataset_name}')
 
     if args.save_images:
         os.makedirs(result_dir, exist_ok=True)
