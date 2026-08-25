@@ -1,15 +1,19 @@
-"""Build a pooled meta-info file for all-in-one training over the six blur
-variants produced by run_blur_synthesis_pipeline.py.
+"""
+Build a pooled meta-info file for all-in-one training over the defocus blur
+levels, with a SHARED ground-truth folder.
 
-Layout expected (dataset mode of the synthesis pipeline):
-    <root>/<split>/variant_k/input_crops/*.png
-    <root>/<split>/variant_k/target_crops/*.png
+Layout (matches the Defocus_*_{Restormer,PromptIR}.yml configs):
+    <root>/<split>/<group>/<level>/input_crops/*.png     # per-level blur (lq)
+    <root>/<split>/<group>/shared/target_crops/*.png     # shared GT (one copy)
+
+Emitted line (parsed by Dataset_PairedAiO -> lq_rel gt_rel int_domain):
+    train/Defocus/f4/input_crops/0001.png train/Defocus/shared/target_crops/0001.png 0
 
 Usage:
     python build_aio_meta_info.py --root ./Datasets --split train \
-        --out  ./Datasets/meta_aio_train.txt
+        --out ./Datasets/meta_aio_defocus_train.txt
     python build_aio_meta_info.py --root ./Datasets --split val \
-        --out  ./Datasets/meta_aio_val.txt
+        --out ./Datasets/meta_aio_defocus_val.txt
 """
 import argparse
 import os
@@ -24,31 +28,31 @@ def list_images(d):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--root', required=True)
+    ap.add_argument('--root', required=True, help="== dataset 'dataroot' in the AiO YAML")
     ap.add_argument('--split', default='train', choices=['train', 'val'])
+    ap.add_argument('--group', default='Defocus')
+    ap.add_argument('--levels', nargs='+', default=['f0', 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8'],
+                    help='folder names; index in this list is the domain id')
     ap.add_argument('--out', required=True)
-    ap.add_argument('--num-variants', type=int, default=6)
     args = ap.parse_args()
 
-    lines, counts = [], []
-    for k in range(1, args.num_variants + 1):
-        blur_dir = osp.join(args.root, args.split, f'ShiftVariant_V{k}', 'input_crops')
-        sharp_dir = osp.join(args.root, args.split, f'ShiftVariant_V{k}', 'target_crops')
-        blur_imgs = list_images(blur_dir)
-        sharp_set = set(list_images(sharp_dir))
-        n = 0
-        for name in blur_imgs:
-            if name not in sharp_set:
-                raise FileNotFoundError(f'no GT for {blur_dir}/{name}')
-            lq_rel = osp.join(args.split, f'ShiftVariant_V{k}', 'input_crops', name)
-            gt_rel = osp.join(args.split, f'ShiftVariant_V{k}', 'target_crops', name)
-            lines.append(f'{lq_rel} {gt_rel} {k - 1}')
-            n += 1
-        counts.append(n)
-        print(f'variant_{k}: {n} pairs')
+    gt_rel_dir = osp.join(args.split, args.group, 'shared', 'target_crops')
+    gt_set = set(list_images(osp.join(args.root, gt_rel_dir)))
 
-    if len(set(counts)) != 1:  # assert equal image counts across variants
-        raise ValueError(f'variant counts differ: {counts}')
+    lines, counts = [], []
+    for dom, lvl in enumerate(args.levels):
+        lq_rel_dir = osp.join(args.split, args.group, lvl, 'input_crops')
+        imgs = list_images(osp.join(args.root, lq_rel_dir))
+        for name in imgs:
+            if name not in gt_set:
+                raise FileNotFoundError(f'no shared GT for {lvl}/{name}')
+            lines.append(f'{osp.join(lq_rel_dir, name)} '
+                         f'{osp.join(gt_rel_dir, name)} {dom}')
+        counts.append(len(imgs))
+        print(f'{lvl}: {len(imgs)} pairs (domain {dom})')
+
+    if len(set(counts)) != 1:
+        raise ValueError(f'level counts differ: {counts}')
 
     os.makedirs(osp.dirname(osp.abspath(args.out)), exist_ok=True)
     with open(args.out, 'w') as f:

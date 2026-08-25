@@ -1,0 +1,140 @@
+## Phase Mask Deblurring for Defocus levels F4, F6, F8 PSF Convolved DIV2K with PromptIR
+# general settings
+name: Defocus_F4_F6_F8_AiO_PromptIR
+model_type: ImageCleanModel
+scale: 1
+num_gpu: 1
+manual_seed: 100
+
+# dataset and data loader settings
+datasets:
+  train:
+    name: F4_F6_F8_AiO_train
+    type: Dataset_PairedAiO
+    dataroot: ./Motion_Deblurring/Datasets
+    meta_info_file: ./Motion_Deblurring/Datasets/meta_aio_defocus_f4_f6_f8_train.txt
+    geometric_augs: true
+
+    filename_tmpl: '{}'
+    io_backend:
+      type: disk
+
+    # data loader
+    use_shuffle: true
+    num_worker_per_gpu: 8
+    batch_size_per_gpu: 2
+
+    ### ------- Training on single fixed-patch size 256x256---------
+    mini_batch_sizes: [2]
+    iters: [300000]
+    gt_size: 256
+    gt_sizes: [256]
+    ### ------------------------------------------------------------
+
+    dataset_enlarge_ratio: 1
+    prefetch_mode: ~
+
+  # per-domain validation
+  val_F4:
+    name: F4_val
+    type: Dataset_PairedImage
+    dataroot_gt: ./Motion_Deblurring/Datasets/val/Defocus/shared/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/val/Defocus/f4/input_crops
+    io_backend:
+      type: disk
+  val_F6:
+    name: F6_val
+    type: Dataset_PairedImage
+    dataroot_gt: ./Motion_Deblurring/Datasets/val/Defocus/shared/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/val/Defocus/f6/input_crops
+    io_backend:
+      type: disk
+  val_F8:
+    name: F8_val
+    type: Dataset_PairedImage
+    dataroot_gt: ./Motion_Deblurring/Datasets/val/Defocus/shared/target_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/val/Defocus/f8/input_crops
+    io_backend:
+      type: disk
+
+# network structures
+network_g:
+  type: PromptIR
+  inp_channels: 3
+  out_channels: 3
+  dim: 48
+  num_blocks: [4, 6, 6, 8]
+  num_refinement_blocks: 4
+  heads: [1, 2, 4, 8]
+  ffn_expansion_factor: 2.66
+  bias: false
+  LayerNorm_type: WithBias
+  prompt_len: 5
+
+# path
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+
+# training settings
+train:
+  total_iter: 300000
+  warmup_iter: -1 # no warm up
+  use_grad_clip: true
+
+  scheduler:
+    type: CosineAnnealingRestartCyclicLR
+    periods: [300000]
+    restart_weights: [1]
+    eta_mins: [!!float 1e-6]
+
+  mixing_augs:
+    mixup: false
+    mixup_beta: 1.2
+    use_identity: true
+
+  optim_g:
+    type: AdamW
+    lr: !!float 2e-4
+    weight_decay: !!float 1e-4
+    betas: [0.9, 0.999]
+
+  # losses
+  pixel_opt:
+    type: L1Loss
+    loss_weight: 1
+    reduction: mean
+
+# validation settings
+val:
+  window_size: 8
+  val_freq: !!float 5e3
+  save_img: false
+  rgb2bgr: true
+  use_image: true
+  max_minibatch: 2
+
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: false
+
+# logging settings
+logger:
+  print_freq: 1000
+  save_checkpoint_freq: !!float 25e3
+  use_tb_logger: true
+  wandb:
+    project: ~
+    resume_id: ~
+
+# dist training settings
+dist_params:
+  backend: nccl
+  port: 29500
