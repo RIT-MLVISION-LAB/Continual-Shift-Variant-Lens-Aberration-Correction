@@ -22,13 +22,13 @@ datasets:
     # data loader
     use_shuffle: true
     num_worker_per_gpu: 8
-    batch_size_per_gpu: 2
+    batch_size_per_gpu: 6
 
-    ### ------- Training on single fixed-patch size 256x256---------
-    mini_batch_sizes: [2]
+    ### ------- Training on single fixed-patch size 224x224---------
+    mini_batch_sizes: [6]
     iters: [100000]
-    gt_size: 256
-    gt_sizes: [256]
+    gt_size: 224
+    gt_sizes: [224]
     ### ------------------------------------------------------------
 
     dataset_enlarge_ratio: 1
@@ -70,9 +70,9 @@ train:
 
   scheduler:
     type: CosineAnnealingRestartCyclicLR
-    periods: [100000]
-    restart_weights: [1]
-    eta_mins: [!!float 1e-6]
+    periods: [46000, 54000]
+    restart_weights: [1, 1]
+    eta_mins: [0.0003, 0.000001]
 
   mixing_augs:
     mixup: false
@@ -81,7 +81,7 @@ train:
 
   optim_g:
     type: AdamW
-    lr: !!float 2e-4
+    lr: !!float 3e-4
     weight_decay: !!float 1e-4
     betas: [0.9, 0.999]
 
@@ -98,7 +98,7 @@ val:
   save_img: false
   rgb2bgr: true
   use_image: true
-  max_minibatch: 2
+  max_minibatch: 6
 
   metrics:
     psnr:

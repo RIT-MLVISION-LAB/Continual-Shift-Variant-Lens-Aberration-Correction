@@ -1,6 +1,6 @@
-## Phase Mask Deblurring for Defocus level F8 PSF Convolved DIV2K with Restormer
+## Phase Mask Deblurring for Defocus level F0 PSF Convolved DIV2K with PromptIR
 # general settings
-name: Defocus_F8_Restormer
+name: Defocus_F0_PromptIR
 model_type: ImageCleanModel
 scale: 1
 num_gpu: 1
@@ -9,10 +9,10 @@ manual_seed: 100
 # dataset and data loader settings
 datasets:
   train:
-    name: F8_train
+    name: F0_train
     type: Dataset_PairedImage
     dataroot_gt: ./Motion_Deblurring/Datasets/train/Defocus/shared/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/train/Defocus/f8/input_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/train/Defocus/f0/input_crops
     geometric_augs: true
 
     filename_tmpl: '{}'
@@ -35,16 +35,16 @@ datasets:
     prefetch_mode: ~
 
   val:
-    name: F8_val
+    name: F0_val
     type: Dataset_PairedImage
     dataroot_gt: ./Motion_Deblurring/Datasets/val/Defocus/shared/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/val/Defocus/f8/input_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/val/Defocus/f0/input_crops
     io_backend:
       type: disk
 
 # network structures
 network_g:
-  type: Restormer
+  type: PromptIR
   inp_channels: 3
   out_channels: 3
   dim: 48
@@ -54,6 +54,7 @@ network_g:
   ffn_expansion_factor: 2.66
   bias: false
   LayerNorm_type: WithBias
+  prompt_len: 5
 
 # path
 path:

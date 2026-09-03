@@ -1,6 +1,6 @@
-## Phase Mask Deblurring for Defocus level F8 PSF Convolved DIV2K with Restormer
+## Phase Mask Deblurring for Defocus level F5 PSF Convolved DIV2K with Restormer
 # general settings
-name: Defocus_F8_Restormer
+name: Defocus_F5_Restormer
 model_type: ImageCleanModel
 scale: 1
 num_gpu: 1
@@ -9,10 +9,10 @@ manual_seed: 100
 # dataset and data loader settings
 datasets:
   train:
-    name: F8_train
+    name: F5_train
     type: Dataset_PairedImage
     dataroot_gt: ./Motion_Deblurring/Datasets/train/Defocus/shared/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/train/Defocus/f8/input_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/train/Defocus/f5/input_crops
     geometric_augs: true
 
     filename_tmpl: '{}'
@@ -35,10 +35,10 @@ datasets:
     prefetch_mode: ~
 
   val:
-    name: F8_val
+    name: F5_val
     type: Dataset_PairedImage
     dataroot_gt: ./Motion_Deblurring/Datasets/val/Defocus/shared/target_crops
-    dataroot_lq: ./Motion_Deblurring/Datasets/val/Defocus/f8/input_crops
+    dataroot_lq: ./Motion_Deblurring/Datasets/val/Defocus/f5/input_crops
     io_backend:
       type: disk
 
