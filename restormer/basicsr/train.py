@@ -80,7 +80,7 @@ def init_loggers(opt):
 
 def create_train_val_dataloader(opt, logger):
     # create train and val dataloaders
-    train_loader, val_loader = None, None
+    train_loader, val_loaders = None, []
     for phase, dataset_opt in opt['datasets'].items():
         if phase == 'train':
             dataset_enlarge_ratio = dataset_opt.get('dataset_enlarge_ratio', 1)
@@ -109,7 +109,7 @@ def create_train_val_dataloader(opt, logger):
                 f'\n\tRequire iter number per epoch: {num_iter_per_epoch}'
                 f'\n\tTotal epochs: {total_epochs}; iters: {total_iters}.')
 
-        elif phase == 'val':
+        elif phase.split('_')[0] == 'val':  # accepts multiple validation phases, e.g., val, val_4, etc.
             val_set = create_dataset(dataset_opt)
             val_loader = create_dataloader(
                 val_set,
@@ -121,10 +121,11 @@ def create_train_val_dataloader(opt, logger):
             logger.info(
                 f'Number of val images/folders in {dataset_opt["name"]}: '
                 f'{len(val_set)}')
+            val_loaders.append(val_loader)
         else:
             raise ValueError(f'Dataset phase {phase} is not recognized.')
 
-    return train_loader, train_sampler, val_loader, total_epochs, total_iters
+    return train_loader, train_sampler, val_loaders, total_epochs, total_iters
 
 
 def main():
@@ -169,7 +170,7 @@ def main():
 
     # create train and validation dataloaders
     result = create_train_val_dataloader(opt, logger)
-    train_loader, train_sampler, val_loader, total_epochs, total_iters = result
+    train_loader, train_sampler, val_loaders, total_epochs, total_iters = result
 
     # create model
     if resume_state:  # resume training
@@ -291,8 +292,9 @@ def main():
                 rgb2bgr = opt['val'].get('rgb2bgr', True)
                 # wheather use uint8 image to compute metrics
                 use_image = opt['val'].get('use_image', True)
-                model.validation(val_loader, current_iter, tb_logger,
-                                 opt['val']['save_img'], rgb2bgr, use_image )
+                for val_loader in val_loaders:
+                    model.validation(val_loader, current_iter, tb_logger,
+                                 opt['val']['save_img'], rgb2bgr, use_image)
 
             data_time = time.time()
             iter_time = time.time()
@@ -308,8 +310,9 @@ def main():
     logger.info('Save the latest model.')
     model.save(epoch=-1, current_iter=-1)  # -1 stands for the latest
     if opt.get('val') is not None:
-        model.validation(val_loader, current_iter, tb_logger,
-                         opt['val']['save_img'])
+        for val_loader in val_loaders:
+            model.validation(val_loader, current_iter, tb_logger,
+                             opt['val']['save_img'])
     if tb_logger:
         tb_logger.close()
 
